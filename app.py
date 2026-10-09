@@ -29,9 +29,6 @@ def board_from_label(label):
 
 st.session_state.setdefault("lang", "zh")
 st.session_state.setdefault("active_date", date_cls.today())
-st.session_state.setdefault("suggestions", {})
-st.session_state.setdefault("sug_club", None)
-st.session_state.setdefault("sug_date", None)
 st.session_state.setdefault("flash", "")
 st.session_state.setdefault("warning", "")
 
@@ -194,21 +191,18 @@ def submit_score(match, score_a, score_b):
     st.rerun()
 
 
-def start_match(court_no, suggestion, date_str, members):
-    ids = suggestion["team_a"] + suggestion["team_b"]
-    board = suggestion.get("board", storage.DEFAULT_BOARD)
+def create_match(court_no, pairing, date_str, members):
+    ids = pairing["team_a"] + pairing["team_b"]
+    board = pairing.get("board", storage.DEFAULT_BOARD)
     names = {p: members[p]["name"] for p in ids}
     before = {p: members[p]["ratings"][board] for p in ids}
     storage.add_match(
         club, date_str, court_no,
-        suggestion["team_a"], suggestion["team_b"], names, before, board=board,
+        pairing["team_a"], pairing["team_b"], names, before, board=board,
     )
-    st.session_state.suggestions.pop(court_no, None)
-    st.session_state.flash = T("match_started")
-    st.rerun()
 
 
-def render_court(court_no, active, suggestion, members, date_str, others_used, available):
+def render_court(court_no, active, members, date_str, others_used, checked):
     with st.container(border=True):
         st.markdown(f"**{T('court')} {court_no}**")
         if active is not None:
@@ -232,61 +226,49 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
                     lambda p: snap.get(p) or members.get(p, {}).get("name", p),
                     lambda p: before.get(p),
                 )
+            balance = abs(
+                sum(before.get(p, 0.0) for p in active["team_a"])
+                - sum(before.get(p, 0.0) for p in active["team_b"])
+            )
+            st.caption(T("balance", n=round(balance)))
             sc = st.columns(2)
             score_a = sc[0].text_input("A", key=f"sa_{active['id']}")
             score_b = sc[1].text_input("B", key=f"sb_{active['id']}")
-            bb = st.columns(2)
-            if bb[0].button(
+            if st.button(
                 T("submit_score"), key=f"sub_{active['id']}",
                 type="primary", width="stretch",
             ):
                 submit_score(active, score_a, score_b)
-            if bb[1].button(
-                T("cancel_match"), key=f"cx_{active['id']}",
-                width="stretch",
-            ):
-                storage.cancel_match(club, active["id"])
-                st.session_state.flash = T("match_cancelled")
-                st.rerun()
-        elif suggestion is not None:
-            board = suggestion.get("board", storage.DEFAULT_BOARD)
-            st.caption(T(f"board_{board}"))
-            c1, c2 = st.columns(2)
-            with c1:
-                st.caption(T("team_a"))
-                team_block(
-                    suggestion["team_a"],
-                    lambda p: members[p]["name"],
-                    lambda p: members[p]["ratings"][board],
-                )
-            with c2:
-                st.caption(T("team_b"))
-                team_block(
-                    suggestion["team_b"],
-                    lambda p: members[p]["name"],
-                    lambda p: members[p]["ratings"][board],
-                )
-            st.caption(T("balance", n=round(suggestion["balance"])))
             bb = st.columns(2)
             if bb[0].button(
-                T("confirm_start"), key=f"start_{court_no}",
-                type="primary", width="stretch",
-            ):
-                start_match(court_no, suggestion, date_str, members)
-            if bb[1].button(
                 T("regen"), key=f"regen_{court_no}", width="stretch"
             ):
-                pool = [p for p in available if p not in others_used]
-                exclude = {frozenset(suggestion["team_a"] + suggestion["team_b"])}
+                pool = [p for p in checked if p not in others_used]
+                exclude = {frozenset(active["team_a"] + active["team_b"])}
                 new = matchmaking.suggest_match(
                     members, pool, storage.load_matches(club),
                     storage.matches_on(club, date_str),
                     datetime.now(), exclude, board=board,
                 )
                 if new:
-                    st.session_state.suggestions[court_no] = new
+                    names = {p: members[p]["name"] for p in new["team_a"] + new["team_b"]}
+                    before = {
+                        p: members[p]["ratings"][board]
+                        for p in new["team_a"] + new["team_b"]
+                    }
+                    storage.reshuffle_match(
+                        club, active["id"],
+                        new["team_a"], new["team_b"], names, before,
+                    )
                 else:
                     st.session_state.warning = T("no_other_pairing")
+                st.rerun()
+            if bb[1].button(
+                T("cancel_match"), key=f"cx_{active['id']}",
+                width="stretch",
+            ):
+                storage.cancel_match(club, active["id"])
+                st.session_state.flash = T("match_cancelled")
                 st.rerun()
         else:
             st.selectbox(
@@ -312,10 +294,6 @@ if page == T("p_tonight"):
         storage.set_settings(club, courts=n_courts)
 
     members = storage.members_by_id(club)
-    if st.session_state.sug_club != club or st.session_state.sug_date != date_str:
-        st.session_state.suggestions = {}
-        st.session_state.sug_club = club
-        st.session_state.sug_date = date_str
 
     tonight = storage.matches_on(club, date_str)
     active_list = storage.active_matches(club, date_str)
@@ -347,29 +325,15 @@ if page == T("p_tonight"):
     now = datetime.now()
     available = [p for p in checked if p not in on_court]
 
-    suggestions = {
-        court: s for court, s in st.session_state.suggestions.items()
-        if court <= n_courts
-        and set(s["team_a"] + s["team_b"]) <= set(available)
-    }
-    st.session_state.suggestions = suggestions
-
     active_court = {
         p: court
         for court, m in active_by_court.items()
         for p in m["team_a"] + m["team_b"]
     }
-    suggested_court = {
-        p: court
-        for court, s in suggestions.items()
-        for p in s["team_a"] + s["team_b"]
-    }
 
     def court_cell(p):
         if p in active_court:
             return str(active_court[p])
-        if p in suggested_court:
-            return f"{suggested_court[p]}·{T('state_assigned')}"
         return T("rest")
 
     if checked:
@@ -390,35 +354,32 @@ if page == T("p_tonight"):
 
     need_gen = [
         court for court in range(1, n_courts + 1)
-        if court not in active_by_court and court not in suggestions
+        if court not in active_by_court
     ]
     if st.button(
         T("gen_all", n=len(need_gen)), disabled=not need_gen,
         type="primary",
     ):
-        assigned = set()
-        for s in suggestions.values():
-            assigned |= set(s["team_a"]) | set(s["team_b"])
-        pool = [p for p in available if p not in assigned]
         courts_boards = []
         default_label = board_options()[BOARD_KEYS.index(storage.DEFAULT_BOARD)]
         for court in need_gen:
             label = st.session_state.get(f"court_board_{court}", default_label)
             courts_boards.append((court, board_from_label(label)))
         new_sugs = matchmaking.suggest_matches(
-            members, pool, storage.load_matches(club),
+            members, available, storage.load_matches(club),
             tonight, now, courts_boards,
         )
         if not new_sugs:
             st.session_state.warning = T("not_enough_players")
             st.rerun()
-        suggestions.update(new_sugs)
-        st.session_state.suggestions = suggestions
+        for court, pairing in new_sugs.items():
+            create_match(court, pairing, date_str, members)
+        st.session_state.flash = T("match_started")
         st.rerun()
 
     used_by_court = {
-        court: set(s["team_a"]) | set(s["team_b"])
-        for court, s in suggestions.items()
+        court: set(m["team_a"]) | set(m["team_b"])
+        for court, m in active_by_court.items()
     }
     max_court = max([n_courts, *active_by_court.keys()])
     court_cols = st.columns(3)
@@ -431,11 +392,10 @@ if page == T("p_tonight"):
             render_court(
                 court_no,
                 active_by_court.get(court_no),
-                suggestions.get(court_no),
                 members,
                 date_str,
                 others_used,
-                available,
+                checked,
             )
 
 elif page == T("p_members"):

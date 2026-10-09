@@ -19,13 +19,12 @@ Badminton club matchmaking tool: a web app for multiple clubs and multiple court
 
 1. **Check in attendance**: tick everyone who showed up. You can tick/untick at any time during the night; only currently ticked players are considered for pairings. Anyone already on court is automatically excluded from the pool.
 2. **Set court count**: adjust 1–12 courts at the top. It is saved automatically and remembered next time.
-3. **Generate pairings**: click “Generate pairings for N free court(s)”. The app balances rest time (players who rested longest are picked first), then team strength, then varies partners/opponents.
-   - Each court needs 4 free players. If there are not enough, only some courts are filled; the rest show “Free”.
+3. **Generate pairings**: click “Generate pairings for N free court(s)”. The app balances rest time (players who rested longest are picked first), then team strength, then varies partners/opponents. A successful generation **starts the match immediately** — the start time is recorded and the court card moves straight to score entry.
+   - Each doubles court needs 4 free players (2 for singles). If there are not enough, only some courts are filled; the rest show “Free”.
    - The “On court” column shows each player's court number (e.g. 1, 2); anyone not assigned shows “Rest”.
-4. **Start**: confirm the pairing on a court card and click “Start” — the match start time is recorded.
-5. **Shuffle**: click “Shuffle” for a different pairing (you get a notice if no alternative is available).
-6. **Enter the score**: after the match, type the final scores for teams A and B (integers, 0–30, a winner is required) and click “Submit score”. Ratings update automatically and the match is written to history. Finished matches cannot be edited, so double-check before submitting.
-7. **Cancel**: a started match with no score yet can be cancelled; those players return to the pool.
+4. **Shuffle**: click “Shuffle” on a started match to get a different pairing (only for matches without a score yet; you get a notice if no alternative is available). The start time is kept.
+5. **Enter the score**: after the match, type the final scores for teams A and B (integers, 0–30, a winner is required) and click “Submit score”. Ratings update automatically and the match is written to history. Finished matches cannot be edited, so double-check before submitting.
+6. **Cancel**: a started match with no score yet can be cancelled; those players return to the pool, and their game counts and rest times roll back (rest is recalculated from their last actually completed match).
 
 ## Other pages
 

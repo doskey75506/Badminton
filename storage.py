@@ -282,6 +282,20 @@ def finish_match(club_id, match_id, score_a, score_b, ratings_before, ratings_af
     save_matches(club_id, matches)
 
 
+def reshuffle_match(club_id, match_id, team_a, team_b, names, ratings_before):
+    matches = load_matches(club_id)
+    for m in matches:
+        if m["id"] == match_id:
+            if m["score_a"] is not None:
+                raise ValueError("cannot reshuffle a finished match")
+            m["team_a"] = list(team_a)
+            m["team_b"] = list(team_b)
+            m["names"] = names
+            m["ratings_before"] = dict(ratings_before)
+            break
+    save_matches(club_id, matches)
+
+
 def cancel_match(club_id, match_id):
     matches = load_matches(club_id)
     target = next((m for m in matches if m["id"] == match_id), None)

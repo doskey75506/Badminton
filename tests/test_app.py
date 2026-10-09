@@ -64,16 +64,18 @@ def test_all_pages_render_en(app):
         navigate(app, page)
 
 
-def test_generate_and_start_match(app):
+def test_generate_starts_match(app):
     seed_club()
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    click(app, "开赛")
     club = storage.list_clubs()[0]["id"]
     active = storage.active_matches(club, TODAY)
     assert len(active) == 1
+    assert active[0]["started_at"] is not None
+    assert active[0]["finished_at"] is None
     score_inputs = [i for i in app.text_input if i.label in ("A", "B")]
     assert len(score_inputs) == 2
+    assert not [b for b in app.button if b.label == "开赛"]
 
 
 def test_submit_score_updates_rating(app):
@@ -122,25 +124,62 @@ def test_court_count_adjustable(app):
     assert storage.get_settings(club)["courts"] == 4
 
 
-def test_shuffle_replaces_suggestion(app):
+def test_shuffle_replaces_pairing(app):
     seed_club()
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    before = app.session_state["suggestions"]
+    club = storage.list_clubs()[0]["id"]
+    before = storage.active_matches(club, TODAY)[0]
+    before_teams = (tuple(before["team_a"]), tuple(before["team_b"]))
     click(app, "换一组")
-    after = app.session_state["suggestions"]
-    assert set(before) == set(after)
-    assert after != before or len(before) == 1
+    after = storage.active_matches(club, TODAY)
+    assert len(after) == 1
+    assert after[0]["id"] == before["id"]
+    assert after[0]["started_at"] == before["started_at"]
+    assert (
+        tuple(after[0]["team_a"]), tuple(after[0]["team_b"])
+    ) != before_teams
 
 
 def test_cancel_match(app):
     club, ids = seed_club()
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    click(app, "开赛")
     assert storage.active_matches(club, TODAY)
     click(app, "作废")
     assert storage.active_matches(club, TODAY) == []
+
+
+def test_cancel_rolls_back_player_state(app):
+    club, ids = seed_club()
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    active = storage.active_matches(club, TODAY)
+    assert len(active) == 1
+    on_court = set(active[0]["team_a"]) | set(active[0]["team_b"])
+    assert len(on_court) == 4
+
+    rows = app.dataframe[0].value
+    names = {m["id"]: m["name"] for m in storage.load_members(club)}
+    by_name = {r["姓名"]: r for r in rows.to_dict("records")}
+    for pid in ids:
+        row = by_name[names[pid]]
+        if pid in on_court:
+            assert row["场次"] == 1
+            assert str(row["在场"]) == "1"
+        else:
+            assert row["场次"] == 0
+            assert str(row["在场"]) == "休息"
+
+    click(app, "作废")
+    assert storage.active_matches(club, TODAY) == []
+    rows = app.dataframe[0].value
+    by_name = {r["姓名"]: r for r in rows.to_dict("records")}
+    for pid in ids:
+        row = by_name[names[pid]]
+        assert row["场次"] == 0
+        assert str(row["在场"]) == "休息"
+        assert row["休息(分钟)"] == 0.0
 
 
 def test_create_and_switch_club(app):
@@ -257,9 +296,6 @@ def test_womens_court_flow(app):
     board_sel.set_value("女子双打")
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    sugs = app.session_state["suggestions"]
-    assert sugs[1]["board"] == "womens_double"
-    click(app, "开赛")
     active = storage.active_matches(club, TODAY)
     assert active[0]["board"] == "womens_double"
     inputs = [i for i in app.text_input if i.label in ("A", "B")]
@@ -274,43 +310,47 @@ def test_womens_court_flow(app):
     assert members[winner_team[0]]["ratings"]["open_double"] == 1000
 
 
-def assert_no_suggestion_overlap(sugs):
+def assert_no_overlap(matches):
     seen = {}
-    for court, s in sugs.items():
-        for p in s["team_a"] + s["team_b"]:
+    for m in matches:
+        for p in m["team_a"] + m["team_b"]:
             assert p not in seen, (
-                f"player {p} assigned to courts {seen[p]} and {court}"
+                f"player {p} assigned to courts {seen[p]} and {m['court']}"
             )
-            seen[p] = court
+            seen[p] = m["court"]
+
+
+def active_by_court(club):
+    return {m["court"]: m for m in storage.active_matches(club, TODAY)}
 
 
 def test_no_overlap_when_generating_additional_courts(app):
     names = ("Alice", "Bob", "Cara", "Dan", "Eve", "Frank", "Grace", "Heidi")
-    seed_club(names=names)
+    club, ids = seed_club(names=names)
     app.run()
     courts = [i for i in app.number_input if i.label == "场地数量"][0]
     courts.set_value(1)
     app.run()
     click(app, "为 1 个空闲场地生成对阵")
-    assert set(app.session_state["suggestions"]) == {1}
+    assert set(active_by_court(club)) == {1}
     courts = [i for i in app.number_input if i.label == "场地数量"][0]
     courts.set_value(3)
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    sugs = app.session_state["suggestions"]
-    assert 1 in sugs
-    assert_no_suggestion_overlap(sugs)
+    matches = storage.active_matches(club, TODAY)
+    assert {1, 2} <= {m["court"] for m in matches}
+    assert_no_overlap(matches)
 
 
 def test_no_overlap_mixed_boards(app):
     names = ("Alice", "Bob", "Cara", "Dan", "Eve", "Frank", "Grace", "Heidi")
-    seed_club(names=names)
+    club, ids = seed_club(names=names)
     app.run()
     courts = [i for i in app.number_input if i.label == "场地数量"][0]
     courts.set_value(1)
     app.run()
     click(app, "为 1 个空闲场地生成对阵")
-    assert app.session_state["suggestions"][1]["board"] == "open_double"
+    assert active_by_court(club)[1]["board"] == "open_double"
     courts = [i for i in app.number_input if i.label == "场地数量"][0]
     courts.set_value(3)
     app.run()
@@ -321,19 +361,20 @@ def test_no_overlap_mixed_boards(app):
     sels[1].set_value("开放单打")
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    sugs = app.session_state["suggestions"]
-    assert sugs[1]["board"] == "open_double"
-    assert sugs[2]["board"] == "open_single"
-    assert sugs[3]["board"] == "open_single"
-    assert_no_suggestion_overlap(sugs)
+    by_court = active_by_court(club)
+    assert set(by_court) == {1, 2, 3}
+    assert by_court[1]["board"] == "open_double"
+    assert by_court[2]["board"] == "open_single"
+    assert by_court[3]["board"] == "open_single"
+    assert_no_overlap(storage.active_matches(club, TODAY))
 
 
-def test_assigned_state_shown_in_stats(app):
+def test_stats_show_court_for_assigned_players(app):
     seed_club()
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
     stat_df = app.dataframe[0].value
     col = [c for c in stat_df.columns if c == "在场"][0]
     values = stat_df[col].tolist()
-    assert any("·已分配" in str(v) for v in values)
+    assert any(str(v) == "1" for v in values)
     assert any(str(v) == "休息" for v in values)

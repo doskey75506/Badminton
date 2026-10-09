@@ -32,7 +32,6 @@ LANGS = {
         "total_rating": "合计积分 {r}",
         "running_at": "进行中 · 开赛 {t}",
         "balance": "双方积分差 {n}",
-        "confirm_start": "开赛",
         "regen": "换一组",
         "submit_score": "提交比分",
         "cancel_match": "作废",
@@ -91,7 +90,6 @@ LANGS = {
         "gender_male": "男",
         "gender_female": "女",
         "gender_unspecified": "未设置",
-        "state_assigned": "已分配",
         "ongoing": "进行中",
     },
     "en": {
@@ -127,7 +125,6 @@ LANGS = {
         "total_rating": "Total rating {r}",
         "running_at": "In progress · started {t}",
         "balance": "Rating gap {n}",
-        "confirm_start": "Start",
         "regen": "Shuffle",
         "submit_score": "Submit score",
         "cancel_match": "Cancel",
@@ -186,7 +183,6 @@ LANGS = {
         "gender_male": "Male",
         "gender_female": "Female",
         "gender_unspecified": "Unspecified",
-        "state_assigned": "assigned",
         "ongoing": "In progress",
     },
 }
