@@ -6,7 +6,9 @@ Badminton club matchmaking tool: a web app for multiple clubs and multiple court
 
 ```bash
 ./setup.sh      # first time: creates the venv and installs dependencies
-./startup.sh    # starts the app (default http://localhost:8501)
+./startup.sh    # starts the app (default http://localhost:8501); quits ~15s after
+                # the last browser tab closes — set IDLE_EXIT_SECONDS=0 to keep
+                # it running (or use a different number of seconds)
 ```
 
 ## First-time setup

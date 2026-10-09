@@ -7,6 +7,8 @@ A Streamlit web app for running badminton club nights: multiple clubs, configura
 ```bash
 ./setup.sh                       # one-time: creates the `badminton` venv + installs deps
 ./startup.sh                     # start the app (opens http://localhost:8501)
+                                 # auto-exits ~15s after the last browser tab closes;
+                                 # IDLE_EXIT_SECONDS=0 disables it, or set other seconds
 
 # or manually:
 source badminton/bin/activate
