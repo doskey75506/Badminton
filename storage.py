@@ -3,9 +3,17 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_RATING = 1000
 DEFAULT_COURTS = 2
+
+MATCH_COLUMNS = [
+    "id", "date", "seq", "court", "team_a", "team_b",
+    "names", "ratings_before", "ratings_after",
+    "score_a", "score_b", "winner", "started_at", "finished_at",
+]
 
 
 class DuplicateNameError(ValueError):
@@ -112,12 +120,110 @@ def members_by_id(club_id):
     return {m["id"]: m for m in load_members(club_id)}
 
 
+def _matches_csv(club_id):
+    return _club_dir(club_id) / "matches.csv"
+
+
+def _dump(obj):
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def _match_to_row(m):
+    return {
+        "id": m["id"],
+        "date": m["date"],
+        "seq": int(m["seq"]),
+        "court": int(m["court"]),
+        "team_a": "|".join(m["team_a"]),
+        "team_b": "|".join(m["team_b"]),
+        "names": _dump(m.get("names") or {}),
+        "ratings_before": _dump(m.get("ratings_before") or {}),
+        "ratings_after": (
+            "" if m.get("ratings_after") is None else _dump(m["ratings_after"])
+        ),
+        "score_a": "" if m.get("score_a") is None else int(m["score_a"]),
+        "score_b": "" if m.get("score_b") is None else int(m["score_b"]),
+        "winner": m.get("winner") or "",
+        "started_at": m.get("started_at") or "",
+        "finished_at": m.get("finished_at") or "",
+    }
+
+
+def _make_match(
+    id_, date_, seq, court, team_a, team_b,
+    names, ratings_before, ratings_after,
+    score_a, score_b, winner, started_at, finished_at,
+):
+    load = json.loads
+    return {
+        "id": id_,
+        "date": date_,
+        "seq": int(seq),
+        "court": int(court),
+        "team_a": team_a.split("|") if team_a else [],
+        "team_b": team_b.split("|") if team_b else [],
+        "names": load(names) if names else {},
+        "ratings_before": load(ratings_before) if ratings_before else {},
+        "ratings_after": load(ratings_after) if ratings_after else None,
+        "score_a": int(score_a) if score_a else None,
+        "score_b": int(score_b) if score_b else None,
+        "winner": winner or None,
+        "started_at": started_at or None,
+        "finished_at": finished_at or None,
+    }
+
+
+def _df_to_matches(df):
+    if df is None or df.empty:
+        return []
+    rows = zip(*(df[c].tolist() for c in MATCH_COLUMNS))
+    return [_make_match(*r) for r in rows]
+
+
+_MATCH_CACHE = {}
+
+
+def _migrate_json_matches(club_id):
+    csv_path = _matches_csv(club_id)
+    json_path = _file(club_id, "matches")
+    if csv_path.exists() or not json_path.exists():
+        return
+    matches = json.loads(json_path.read_text(encoding="utf-8"))
+    save_matches(club_id, matches)
+    json_path.rename(json_path.with_suffix(".json.bak"))
+
+
+def _cached_matches(club_id):
+    _migrate_json_matches(club_id)
+    path = _matches_csv(club_id)
+    key = str(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    st = path.stat()
+    hit = _MATCH_CACHE.get(key)
+    if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+        return hit[2]
+    matches = _df_to_matches(
+        pd.read_csv(path, dtype=str, keep_default_na=False)
+    )
+    _MATCH_CACHE[key] = (st.st_mtime_ns, st.st_size, matches)
+    return matches
+
+
 def load_matches(club_id):
-    return _load(_file(club_id, "matches"), [])
+    return _cached_matches(club_id)
 
 
 def save_matches(club_id, matches):
-    _save(_file(club_id, "matches"), matches)
+    path = _matches_csv(club_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(
+        [_match_to_row(m) for m in matches], columns=MATCH_COLUMNS
+    )
+    tmp = path.with_suffix(".tmp")
+    df.to_csv(tmp, index=False)
+    tmp.replace(path)
+    _MATCH_CACHE.pop(str(path), None)
 
 
 def add_match(club_id, date, court, team_a, team_b, names, ratings_before):
@@ -172,13 +278,13 @@ def cancel_match(club_id, match_id):
 def active_matches(club_id, date):
     return [
         m
-        for m in load_matches(club_id)
+        for m in _cached_matches(club_id)
         if m["date"] == date and m["score_a"] is None
     ]
 
 
 def matches_on(club_id, date):
-    return [m for m in load_matches(club_id) if m["date"] == date]
+    return [m for m in _cached_matches(club_id) if m["date"] == date]
 
 
 def load_attendance(club_id):
