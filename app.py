@@ -9,9 +9,22 @@ import storage
 
 st.set_page_config(page_title="Badminton", layout="wide")
 
+BOARD_KEYS = storage.BOARDS
+
 
 def T(key, **kw):
     return i18n.t(st.session_state.lang, key, **kw)
+
+
+def board_options():
+    return [T(f"board_{b}") for b in BOARD_KEYS]
+
+
+def board_from_label(label):
+    try:
+        return BOARD_KEYS[board_options().index(label)]
+    except ValueError:
+        return storage.DEFAULT_BOARD
 
 
 st.session_state.setdefault("lang", "zh")
@@ -151,6 +164,7 @@ def submit_score(match, score_a, score_b):
         st.session_state.warning = T("score_tie")
         st.rerun()
         return
+    board = match.get("board", storage.DEFAULT_BOARD)
     before = match["ratings_before"]
     try:
         after = ratings.apply_result(
@@ -164,7 +178,7 @@ def submit_score(match, score_a, score_b):
     all_members = storage.load_members(club)
     for m in all_members:
         if m["id"] in after:
-            m["rating"] = after[m["id"]]
+            m["ratings"][board] = after[m["id"]]
     storage.save_members(club, all_members)
     deltas = sorted(
         (
@@ -182,11 +196,12 @@ def submit_score(match, score_a, score_b):
 
 def start_match(court_no, suggestion, date_str, members):
     ids = suggestion["team_a"] + suggestion["team_b"]
+    board = suggestion.get("board", storage.DEFAULT_BOARD)
     names = {p: members[p]["name"] for p in ids}
-    before = {p: members[p]["rating"] for p in ids}
+    before = {p: members[p]["ratings"][board] for p in ids}
     storage.add_match(
         club, date_str, court_no,
-        suggestion["team_a"], suggestion["team_b"], names, before,
+        suggestion["team_a"], suggestion["team_b"], names, before, board=board,
     )
     st.session_state.suggestions.pop(court_no, None)
     st.session_state.flash = T("match_started")
@@ -197,6 +212,8 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
     with st.container(border=True):
         st.markdown(f"**{T('court')} {court_no}**")
         if active is not None:
+            board = active.get("board", storage.DEFAULT_BOARD)
+            st.caption(T(f"board_{board}"))
             st.caption(T("running_at", t=fmt_time(active["started_at"])))
             snap = active.get("names", {})
             before = active.get("ratings_before") or {}
@@ -232,20 +249,22 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
                 st.session_state.flash = T("match_cancelled")
                 st.rerun()
         elif suggestion is not None:
+            board = suggestion.get("board", storage.DEFAULT_BOARD)
+            st.caption(T(f"board_{board}"))
             c1, c2 = st.columns(2)
             with c1:
                 st.caption(T("team_a"))
                 team_block(
                     suggestion["team_a"],
                     lambda p: members[p]["name"],
-                    lambda p: members[p]["rating"],
+                    lambda p: members[p]["ratings"][board],
                 )
             with c2:
                 st.caption(T("team_b"))
                 team_block(
                     suggestion["team_b"],
                     lambda p: members[p]["name"],
-                    lambda p: members[p]["rating"],
+                    lambda p: members[p]["ratings"][board],
                 )
             st.caption(T("balance", n=round(suggestion["balance"])))
             bb = st.columns(2)
@@ -262,7 +281,7 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
                 new = matchmaking.suggest_match(
                     members, pool, storage.load_matches(club),
                     storage.matches_on(club, date_str),
-                    datetime.now(), exclude,
+                    datetime.now(), exclude, board=board,
                 )
                 if new:
                     st.session_state.suggestions[court_no] = new
@@ -270,6 +289,9 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
                     st.session_state.warning = T("no_other_pairing")
                 st.rerun()
         else:
+            st.selectbox(
+                T("board"), board_options(), key=f"court_board_{court_no}",
+            )
             st.caption(T("court_free"))
 
 
@@ -310,7 +332,8 @@ if page == T("p_tonight"):
         for i, m in enumerate(ordered):
             with cb_cols[i % 3]:
                 label = T(
-                    "member_chip", n=m["name"], r=f"{m['rating']:.0f}"
+                    "member_chip", n=m["name"],
+                    r=f"{m['ratings'][storage.DEFAULT_BOARD]:.0f}"
                 )
                 if st.checkbox(
                     label, value=m["id"] in current,
@@ -362,17 +385,22 @@ if page == T("p_tonight"):
         T("gen_all", n=len(need_gen)), disabled=not need_gen,
         type="primary",
     ):
-        if len(available) < 4:
+        courts_boards = []
+        for court in need_gen:
+            label = st.session_state.get(
+                f"court_board_{court}", board_options()[0]
+            )
+            courts_boards.append((court, board_from_label(label)))
+        new_sugs = matchmaking.suggest_matches(
+            members, available, storage.load_matches(club),
+            tonight, now, courts_boards,
+        )
+        if not new_sugs:
             st.session_state.warning = T("not_enough_players")
             st.rerun()
-        else:
-            new_sugs = matchmaking.suggest_matches(
-                members, available, storage.load_matches(club),
-                tonight, now, need_gen,
-            )
-            suggestions.update(new_sugs)
-            st.session_state.suggestions = suggestions
-            st.rerun()
+        suggestions.update(new_sugs)
+        st.session_state.suggestions = suggestions
+        st.rerun()
 
     used_by_court = {
         court: set(s["team_a"]) | set(s["team_b"])
@@ -398,8 +426,17 @@ if page == T("p_tonight"):
 
 elif page == T("p_members"):
     st.header(T("p_members"))
+    gender_map = {
+        T("gender_male"): "m",
+        T("gender_female"): "f",
+        T("gender_unspecified"): None,
+    }
     with st.form("add_member_form", clear_on_submit=True):
         name = st.text_input(T("name"))
+        gender_label = st.selectbox(
+            T("gender"),
+            [T("gender_male"), T("gender_female"), T("gender_unspecified")],
+        )
         rating = st.number_input(
             T("initial_rating"), min_value=0.0,
             value=float(storage.DEFAULT_RATING), step=10.0,
@@ -407,9 +444,10 @@ elif page == T("p_members"):
         submitted = st.form_submit_button(T("add_member"))
     if submitted:
         try:
-            m = storage.add_member(club, name, rating)
+            m = storage.add_member(club, name, rating, gender=gender_map[gender_label])
             st.session_state.flash = T(
-                "member_added", n=m["name"], r=f"{m['rating']:.0f}"
+                "member_added", n=m["name"],
+                r=f"{m['ratings'][storage.DEFAULT_BOARD]:.0f}"
             )
             st.rerun()
         except storage.DuplicateNameError:
@@ -425,11 +463,19 @@ elif page == T("p_members"):
     else:
         stats = overall_stats(storage.load_matches(club))
         st.subheader(T("member_list", n=len(member_list)))
-        for m in sorted(member_list, key=lambda x: -x["rating"]):
+        gender_label_of = {
+            "m": T("gender_male"), "f": T("gender_female"), None: T("gender_unspecified"),
+        }
+        for m in sorted(
+            member_list, key=lambda x: -x["ratings"][storage.DEFAULT_BOARD]
+        ):
             played, wins = stats.get(m["id"], (0, 0))
             cols = st.columns([3, 2, 2, 3, 1])
-            cols[0].write(f"**{m['name']}**")
-            cols[1].write(f"{T('rating')} {m['rating']:.0f}")
+            gl = gender_label_of.get(m.get("gender"), T("gender_unspecified"))
+            cols[0].write(f"**{m['name']}**（{gl}）")
+            cols[1].write(
+                f"{T('rating')} {m['ratings'][storage.DEFAULT_BOARD]:.0f}"
+            )
             cols[2].write(f"{T('games')} {played}")
             cols[3].write(T("w_l", w=wins, l=played - wins))
             if cols[4].button(
@@ -440,9 +486,12 @@ elif page == T("p_members"):
 
 elif page == T("p_standings"):
     st.header(T("p_standings"))
+    board_label = st.selectbox(T("board"), board_options())
+    board = board_from_label(board_label)
     member_list = storage.load_members(club)
     finished = [
-        m for m in storage.load_matches(club) if m["score_a"] is not None
+        m for m in storage.load_matches(club)
+        if m["score_a"] is not None and m.get("board", storage.DEFAULT_BOARD) == board
     ]
     stats = overall_stats(finished)
     rows = []
@@ -451,7 +500,7 @@ elif page == T("p_standings"):
         rows.append(
             {
                 T("col_name"): m["name"],
-                T("rating"): round(m["rating"], 1),
+                T("rating"): round(m["ratings"][board], 1),
                 T("games"): played,
                 T("wins"): wins,
                 T("losses"): played - wins,
@@ -541,6 +590,7 @@ elif page == T("p_history"):
                     T("h_start"): fmt_time(m.get("started_at")),
                     T("h_end"): fmt_time(m.get("finished_at")),
                     T("h_court"): m.get("court", "-"),
+                    T("h_board"): T(f"board_{m.get('board', storage.DEFAULT_BOARD)}"),
                     T("h_teams_a"): team_a,
                     T("h_teams_b"): team_b,
                     T("h_score"): score,

@@ -5,11 +5,17 @@ import pytest
 import matchmaking
 
 NOW = datetime(2026, 10, 9, 21, 0, 0)
+ALL_BOARDS = ["open_single", "womens_single", "open_double", "womens_double"]
 
 
-def make_members(ratings):
+def make_members(ratings, gender=None):
     return {
-        pid: {"id": pid, "name": pid, "rating": float(r)}
+        pid: {
+            "id": pid,
+            "name": pid,
+            "gender": gender,
+            "ratings": {b: float(r) for b in ALL_BOARDS},
+        }
         for pid, r in ratings.items()
     }
 
@@ -79,7 +85,7 @@ def test_fresh_night_prefers_balance():
     result = matchmaking.suggest_match(members, list("ABCD"), [], [], NOW)
     teams = [set(result["team_a"]), set(result["team_b"])]
     for team in teams:
-        ratings = sorted(members[p]["rating"] for p in team)
+        ratings = sorted(members[p]["ratings"]["open_double"] for p in team)
         assert ratings[0] < 1000 < ratings[1]
     assert result["balance"] <= 20
 
@@ -124,3 +130,57 @@ def test_multi_court_stops_when_pool_exhausted():
     six = make_members({n: 1000 for n in list("ABCDEF")})
     out = matchmaking.suggest_matches(six, list("ABCDEF"), [], [], NOW, [1, 2])
     assert set(out) == {1}
+
+
+def test_singles_picks_two_players():
+    members = make_members({"A": 1000, "B": 1000, "C": 1000, "D": 1000})
+    result = matchmaking.suggest_match(
+        members, list("ABCD"), [], [], NOW, board="open_single"
+    )
+    assert len(result["team_a"]) == 1
+    assert len(result["team_b"]) == 1
+    assert result["board"] == "open_single"
+
+
+def test_singles_requires_two_players():
+    members = make_members({"A": 1000})
+    result = matchmaking.suggest_match(
+        members, ["A"], [], [], NOW, board="open_single"
+    )
+    assert result is None
+
+
+def test_womens_board_filters_gender():
+    members = make_members(
+        {n: 1000 for n in ["A", "B", "C", "D", "E", "F"]}
+    )
+    for p in ["A", "B", "C", "D"]:
+        members[p]["gender"] = "f"
+    members["E"]["gender"] = "m"
+    members["F"]["gender"] = "m"
+    out = matchmaking.suggest_matches(
+        members, list("ABCDEF"), [], [], NOW, [(1, "womens_double")]
+    )
+    assert 1 in out
+    picked = set(out[1]["team_a"]) | set(out[1]["team_b"])
+    assert picked <= {"A", "B", "C", "D"}
+
+
+def test_mixed_boards_share_pool():
+    members = make_members(
+        {n: 1000 for n in list("ABCDEFGH")}
+    )
+    members["A"]["gender"] = "f"
+    members["B"]["gender"] = "f"
+    members["C"]["gender"] = "f"
+    members["D"]["gender"] = "f"
+    out = matchmaking.suggest_matches(
+        members, list("ABCDEFGH"), [], [], NOW,
+        [(1, "womens_double"), (2, "open_double")],
+    )
+    assert set(out) == {1, 2}
+    q1 = set(out[1]["team_a"]) | set(out[1]["team_b"])
+    q2 = set(out[2]["team_a"]) | set(out[2]["team_b"])
+    assert q1 <= {"A", "B", "C", "D"}
+    assert q1.isdisjoint(q2)
+    assert len(q2) == 4

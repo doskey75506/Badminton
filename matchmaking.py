@@ -58,35 +58,48 @@ def pair_counts(all_matches):
     return partners, opponents
 
 
+def _gender_ok(member, board):
+    if board.startswith("womens"):
+        return member.get("gender") == "f"
+    return True
+
+
 def _pairings(quad):
     a, b, c, d = quad
     return [((a, b), (c, d)), ((a, c), (b, d)), ((a, d), (b, c))]
 
 
-def _team_rating(members, team):
-    return sum(members[p]["rating"] for p in team)
+def _team_rating(members, team, board):
+    return sum(members[p]["ratings"][board] for p in team)
 
 
-def suggest_match(members, available_ids, all_matches, tonight_matches, now, exclude=None):
-    if len(available_ids) < 4:
+def suggest_match(members, available_ids, all_matches, tonight_matches, now, exclude=None, board="open_double"):
+    is_single = board.endswith("single")
+    need = 2 if is_single else 4
+    if len(available_ids) < need:
         return None
     played, rest = player_stats(available_ids, tonight_matches, now)
     partners, opponents = pair_counts(all_matches)
     exclude = exclude or set()
-    top4 = sorted(rest.values(), reverse=True)[:4]
-    top4_sum = sum(top4)
-    rest_span = REST_TOLERANCE * 4
+    top = sorted(rest.values(), reverse=True)[:need]
+    top_sum = sum(top)
+    rest_span = REST_TOLERANCE * need
 
     best = None
-    for quad in itertools.combinations(sorted(available_ids), 4):
-        if frozenset(quad) in exclude:
+    for group in itertools.combinations(sorted(available_ids), need):
+        if frozenset(group) in exclude:
             continue
-        quad_rest = sum(rest[p] for p in quad)
-        rest_bucket = int((top4_sum - quad_rest) // rest_span)
+        group_rest = sum(rest[p] for p in group)
+        rest_bucket = int((top_sum - group_rest) // rest_span)
         best_pairing = None
-        for team_a, team_b in _pairings(quad):
+        if is_single:
+            pairings = [((group[0],), (group[1],))]
+        else:
+            pairings = _pairings(group)
+        for team_a, team_b in pairings:
             balance = abs(
-                _team_rating(members, team_a) - _team_rating(members, team_b)
+                _team_rating(members, team_a, board)
+                - _team_rating(members, team_b, board)
             )
             balance_bucket = math.ceil(balance / BALANCE_TOLERANCE)
             pair_rep = (
@@ -113,18 +126,26 @@ def suggest_match(members, available_ids, all_matches, tonight_matches, now, exc
         "team_b": list(team_b),
         "balance": balance,
         "stats": stats,
+        "board": board,
     }
 
 
-def suggest_matches(members, available_ids, all_matches, tonight_matches, now, courts):
+def suggest_matches(members, available_ids, all_matches, tonight_matches, now, courts_boards):
+    normalized = []
+    for item in courts_boards:
+        if isinstance(item, tuple):
+            normalized.append(item)
+        else:
+            normalized.append((item, "open_double"))
     pool = list(available_ids)
     out = {}
-    for court in courts:
+    for court, board in normalized:
+        gender_pool = [p for p in pool if _gender_ok(members[p], board)]
         suggestion = suggest_match(
-            members, pool, all_matches, tonight_matches, now
+            members, gender_pool, all_matches, tonight_matches, now, board=board
         )
         if suggestion is None:
-            break
+            continue
         out[court] = suggestion
         used = set(suggestion["team_a"]) | set(suggestion["team_b"])
         pool = [p for p in pool if p not in used]

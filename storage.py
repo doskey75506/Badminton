@@ -8,9 +8,11 @@ import pandas as pd
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_RATING = 1000
 DEFAULT_COURTS = 2
+BOARDS = ["open_single", "womens_single", "open_double", "womens_double"]
+DEFAULT_BOARD = "open_double"
 
 MATCH_COLUMNS = [
-    "id", "date", "seq", "court", "team_a", "team_b",
+    "id", "date", "seq", "court", "board", "team_a", "team_b",
     "names", "ratings_before", "ratings_after",
     "score_a", "score_b", "winner", "started_at", "finished_at",
 ]
@@ -82,24 +84,33 @@ def set_settings(club_id, **kwargs):
 
 
 def load_members(club_id):
-    return _load(_file(club_id, "members"), [])
+    members = _load(_file(club_id, "members"), [])
+    for m in members:
+        if "ratings" not in m:
+            r = float(m.pop("rating", DEFAULT_RATING))
+            m["ratings"] = {b: r for b in BOARDS}
+        if "gender" not in m:
+            m["gender"] = None
+    return members
 
 
 def save_members(club_id, members):
     _save(_file(club_id, "members"), members)
 
 
-def add_member(club_id, name, rating=None):
+def add_member(club_id, name, rating=None, gender=None):
     name = name.strip()
     if not name:
         raise ValueError("member name cannot be empty")
     members = load_members(club_id)
     if any(m["name"] == name for m in members):
         raise DuplicateNameError(f"member 「{name}」 already exists")
+    r = float(rating if rating is not None else DEFAULT_RATING)
     member = {
         "id": uuid.uuid4().hex[:10],
         "name": name,
-        "rating": float(rating if rating is not None else DEFAULT_RATING),
+        "gender": gender,
+        "ratings": {b: r for b in BOARDS},
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     members.append(member)
@@ -134,6 +145,7 @@ def _match_to_row(m):
         "date": m["date"],
         "seq": int(m["seq"]),
         "court": int(m["court"]),
+        "board": m.get("board") or DEFAULT_BOARD,
         "team_a": "|".join(m["team_a"]),
         "team_b": "|".join(m["team_b"]),
         "names": _dump(m.get("names") or {}),
@@ -150,7 +162,7 @@ def _match_to_row(m):
 
 
 def _make_match(
-    id_, date_, seq, court, team_a, team_b,
+    id_, date_, seq, court, board, team_a, team_b,
     names, ratings_before, ratings_after,
     score_a, score_b, winner, started_at, finished_at,
 ):
@@ -160,6 +172,7 @@ def _make_match(
         "date": date_,
         "seq": int(seq),
         "court": int(court),
+        "board": board or DEFAULT_BOARD,
         "team_a": team_a.split("|") if team_a else [],
         "team_b": team_b.split("|") if team_b else [],
         "names": load(names) if names else {},
@@ -176,6 +189,9 @@ def _make_match(
 def _df_to_matches(df):
     if df is None or df.empty:
         return []
+    if "board" not in df.columns:
+        df = df.copy()
+        df["board"] = DEFAULT_BOARD
     rows = zip(*(df[c].tolist() for c in MATCH_COLUMNS))
     return [_make_match(*r) for r in rows]
 
@@ -226,7 +242,7 @@ def save_matches(club_id, matches):
     _MATCH_CACHE.pop(str(path), None)
 
 
-def add_match(club_id, date, court, team_a, team_b, names, ratings_before):
+def add_match(club_id, date, court, team_a, team_b, names, ratings_before, board=DEFAULT_BOARD):
     matches = load_matches(club_id)
     same_day = [m for m in matches if m["date"] == date]
     seq = max((m["seq"] for m in same_day), default=-1) + 1
@@ -235,6 +251,7 @@ def add_match(club_id, date, court, team_a, team_b, names, ratings_before):
         "date": date,
         "seq": seq,
         "court": court,
+        "board": board,
         "team_a": list(team_a),
         "team_b": list(team_b),
         "names": names,

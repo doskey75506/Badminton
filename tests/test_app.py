@@ -56,7 +56,8 @@ def test_all_pages_render_zh(app):
 def test_all_pages_render_en(app):
     seed_club()
     app.run()
-    app.selectbox[0].set_value("English")
+    lang = [s for s in app.selectbox if s.label == "语言 / Language"][0]
+    lang.set_value("English")
     app.run()
     assert not app.exception
     for page in ["Tonight", "Members", "Standings", "History"]:
@@ -93,7 +94,7 @@ def test_submit_score_updates_rating(app):
     matches = storage.matches_on(club, TODAY)
     assert matches[0]["score_a"] == 21
     assert matches[0]["finished_at"] is not None
-    members = {m["id"]: m["rating"] for m in storage.load_members(club)}
+    members = {m["id"]: m["ratings"]["open_double"] for m in storage.load_members(club)}
     assert members[ids[0]] > 1000
     assert members[ids[2]] < 1000
 
@@ -151,7 +152,8 @@ def test_create_and_switch_club(app):
     clubs = storage.list_clubs()
     assert [c["name"] for c in clubs] == ["Test Club", "Second Club"]
     assert app.session_state["club_id"] == clubs[1]["id"]
-    app.selectbox[1].set_value("Test Club")
+    club_sel = [s for s in app.selectbox if s.label == "俱乐部"][0]
+    club_sel.set_value("Test Club")
     app.run()
     assert not app.exception
     assert app.session_state["club_id"] == clubs[0]["id"]
@@ -189,3 +191,84 @@ def test_history_custom_date_range(app):
     app.run()
     assert history_count(app) == "共 0 场"
     assert any("不能晚于" in w.value for w in app.warning)
+
+
+def test_free_court_shows_board_selector(app):
+    seed_club()
+    app.run()
+    board_sels = [s for s in app.selectbox if s.label == "比赛类型"]
+    assert len(board_sels) == 2
+    assert board_sels[0].options == ["开放单打", "女子单打", "开放双打", "女子双打"]
+
+
+def test_standings_board_selector(app):
+    club, ids = seed_club(names=("Alice", "Bob", "Cara", "Dan"))
+    names = {p: n for p, n in zip(ids, ["Alice", "Bob", "Cara", "Dan"])}
+    ratings = {p: 1000.0 for p in ids}
+    storage.add_match(
+        club, TODAY, 1, ids[:2], ids[2:], names, ratings,
+        board="open_double",
+    )
+    storage.finish_match(
+        club, storage.matches_on(club, TODAY)[0]["id"],
+        21, 15, ratings, {ids[0]: 1016.0, ids[1]: 1016.0, ids[2]: 984.0, ids[3]: 984.0},
+    )
+    app.run()
+    navigate(app, "积分榜")
+    board_sel = [s for s in app.selectbox if s.label == "比赛类型"][0]
+    assert board_sel.options == ["开放单打", "女子单打", "开放双打", "女子双打"]
+
+
+def test_history_shows_board_column(app):
+    club, ids = seed_club(names=("Alice", "Bob", "Cara", "Dan"))
+    names = {p: n for p, n in zip(ids, ["Alice", "Bob", "Cara", "Dan"])}
+    ratings = {p: 1000.0 for p in ids}
+    storage.add_match(
+        club, TODAY, 1, ids[:2], ids[2:], names, ratings, board="womens_double"
+    )
+    app.run()
+    navigate(app, "历史")
+    assert len(app.dataframe) == 1
+    cols = list(app.dataframe[0].value.columns)
+    assert "类型" in cols
+
+
+def test_add_member_with_gender(app):
+    seed_club(names=("Alice",))
+    app.run()
+    navigate(app, "成员")
+    name_input = [t for t in app.text_input if t.label == "姓名"][0]
+    name_input.set_value("New Girl")
+    gender_sel = [s for s in app.selectbox if s.label == "性别"][0]
+    gender_sel.set_value("女")
+    click(app, "新增成员")
+    members = storage.load_members(storage.list_clubs()[0]["id"])
+    m = next(x for x in members if x["name"] == "New Girl")
+    assert m["gender"] == "f"
+
+
+def test_womens_court_flow(app):
+    club = storage.create_club("Test Club")["id"]
+    ids = [storage.add_member(club, n, gender="f")["id"]
+           for n in ("Alice", "Bob", "Cara", "Dan")]
+    storage.set_attendance(club, TODAY, ids)
+    app.run()
+    board_sel = [s for s in app.selectbox if s.label == "比赛类型"][0]
+    board_sel.set_value("女子双打")
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    sugs = app.session_state["suggestions"]
+    assert sugs[1]["board"] == "womens_double"
+    click(app, "开赛")
+    active = storage.active_matches(club, TODAY)
+    assert active[0]["board"] == "womens_double"
+    inputs = [i for i in app.text_input if i.label in ("A", "B")]
+    inputs[0].set_value("21")
+    inputs[1].set_value("15")
+    click(app, "提交比分")
+    members = {m["id"]: m for m in storage.load_members(club)}
+    winner_team = active[0]["team_a"]
+    loser_team = active[0]["team_b"]
+    assert members[winner_team[0]]["ratings"]["womens_double"] > 1000
+    assert members[loser_team[0]]["ratings"]["womens_double"] < 1000
+    assert members[winner_team[0]]["ratings"]["open_double"] == 1000
