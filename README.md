@@ -18,4 +18,5 @@ python -m pytest                 # run tests from the repo root
 
 - [使用说明（中文）](docs/usage-zh.md)
 - [User guide (English)](docs/usage-en.md)
-- [积分规则 / Rating rules](docs/rating.md)
+- [积分规则（中文）](docs/rating-zh.md)
+- [Rating rules (English)](docs/rating-en.md)
