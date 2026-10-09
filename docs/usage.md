@@ -35,7 +35,7 @@ Badminton club matchmaking tool: a web app for multiple clubs and multiple court
 
 ## Rating system in brief
 
-Team-sum Elo (K=32): expected score is computed from the sum of each team's ratings, then multiplied by a margin multiplier (bigger for larger score lines and closer teams, clamped to 1.0–2.0). Every winner gains the same delta; every loser loses the same delta. Ratings are snapshotted at match start and applied when the score is submitted; values keep one decimal and never go below 0. Full formula and worked example: [Rating rules](rating-en.md).
+Team-sum Elo (K=32): expected score is computed from the sum of each team's ratings, then multiplied by a margin multiplier (bigger for larger score lines and closer teams, clamped to 1.0–2.0). Every winner gains the same delta; every loser loses the same delta. Ratings are snapshotted at match start and applied when the score is submitted; values keep one decimal and never go below 0. Full formula and worked example: [Rating rules](rating.md).
 
 ## Data
 
