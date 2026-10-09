@@ -155,3 +155,37 @@ def test_create_and_switch_club(app):
     app.run()
     assert not app.exception
     assert app.session_state["club_id"] == clubs[0]["id"]
+
+
+def history_count(at):
+    captions = [c.value for c in at.caption if c.value.startswith("共")]
+    return captions[-1] if captions else None
+
+
+def test_history_custom_date_range(app):
+    from datetime import timedelta
+
+    club, ids = seed_club(names=("Alice", "Bob", "Cara", "Dan"))
+    names = {p: n for p, n in zip(ids, ["Alice", "Bob", "Cara", "Dan"])}
+    ratings = {p: 1000.0 for p in ids}
+    old = (date_cls.today() - timedelta(days=40)).isoformat()
+    storage.add_match(club, old, 1, ids[:2], ids[2:], names, ratings)
+    storage.add_match(club, TODAY, 1, ids[:2], ids[2:], names, ratings)
+    app.run()
+    navigate(app, "历史")
+    assert history_count(app) == "共 2 场"
+
+    range_pick = [s for s in app.selectbox if s.label == "时间范围"][0]
+    range_pick.set_value("自定义范围")
+    app.run()
+    assert not app.exception
+    d_from = [d for d in app.date_input if d.key == "h_from"][0]
+    d_from.set_value(date_cls.today() - timedelta(days=7))
+    app.run()
+    assert history_count(app) == "共 1 场"
+
+    d_to = [d for d in app.date_input if d.key == "h_to"][0]
+    d_to.set_value(date_cls.today() - timedelta(days=100))
+    app.run()
+    assert history_count(app) == "共 0 场"
+    assert any("不能晚于" in w.value for w in app.warning)

@@ -471,29 +471,43 @@ elif page == T("p_history"):
         st.info(T("h_no_data"))
     else:
         fc1, fc2 = st.columns(2)
-        range_pick = fc1.selectbox(
-            T("h_range"),
-            [T("h_all"), T("h_today"), T("h_7"), T("h_30")],
-        )
+        range_opts = [
+            T("h_all"), T("h_today"), T("h_7"), T("h_30"), T("h_custom"),
+        ]
+        range_pick = fc1.selectbox(T("h_range"), range_opts)
         name_pool = sorted(
             {n for m in all_matches for n in m.get("names", {}).values()}
         )
         player_pick = fc2.selectbox(
             T("h_player"), [T("h_all_players")] + name_pool
         )
-        cutoff = None
+        date_from = date_to = None
+        today = date_cls.today()
         if range_pick == T("h_today"):
-            cutoff = date_cls.today().isoformat()
+            date_from = date_to = today.isoformat()
         elif range_pick == T("h_7"):
-            cutoff = (date_cls.today() - timedelta(days=7)).isoformat()
+            date_from = (today - timedelta(days=7)).isoformat()
         elif range_pick == T("h_30"):
-            cutoff = (date_cls.today() - timedelta(days=30)).isoformat()
+            date_from = (today - timedelta(days=30)).isoformat()
+        elif range_pick == T("h_custom"):
+            dc1, dc2 = st.columns(2)
+            d_from = dc1.date_input(
+                T("h_from"), value=today - timedelta(days=30),
+                key="h_from",
+            )
+            d_to = dc2.date_input(T("h_to"), value=today, key="h_to")
+            date_from = d_from.isoformat()
+            date_to = d_to.isoformat()
+            if date_from > date_to:
+                st.warning(T("h_range_invalid"))
 
         rows = []
         for m in sorted(
             all_matches, key=lambda x: (x["date"], x["seq"]), reverse=True
         ):
-            if cutoff and m["date"] < cutoff:
+            if date_from and m["date"] < date_from:
+                continue
+            if date_to and m["date"] > date_to:
                 continue
             names = m.get("names", {})
             if player_pick != T("h_all_players") and player_pick not in names.values():
