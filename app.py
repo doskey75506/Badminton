@@ -283,29 +283,45 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                     T("submit_score"), type="primary", width="stretch",
                 ):
                     submit_score(active, score_a, score_b)
-            bb = st.columns(2)
-            if bb[0].button(
-                T("regen"), key=f"regen_{court_no}", width="stretch"
-            ):
-                pool = [p for p in checked if p not in others_used]
-                exclude = {frozenset(active["team_a"] + active["team_b"])}
-                new = matchmaking.suggest_match(
-                    members, pool, storage.load_matches(club),
-                    storage.matches_on(club, date_str),
-                    datetime.now(), exclude, board=board,
+            on_court_now = active["team_a"] + active["team_b"]
+            pool = [
+                p for p in checked
+                if p not in others_used and p not in on_court_now
+                and matchmaking._gender_ok(members[p], board)
+            ]
+            c_off, c_on = st.columns(2)
+            with c_off:
+                off_labels = [
+                    members[p]["name"] if p in members else p
+                    for p in on_court_now
+                ]
+                off_sel = st.selectbox(
+                    T("swap_out"), off_labels, key=f"swap_off_{court_no}",
                 )
-                if new:
-                    names = {p: members[p]["name"] for p in new["team_a"] + new["team_b"]}
-                    before = {
-                        p: members[p]["ratings"][board]
-                        for p in new["team_a"] + new["team_b"]
-                    }
-                    storage.reshuffle_match(
-                        club, active["id"],
-                        new["team_a"], new["team_b"], names, before,
+            with c_on:
+                if pool:
+                    in_labels = [members[p]["name"] for p in pool]
+                    in_sel = st.selectbox(
+                        T("swap_in"), in_labels, key=f"swap_on_{court_no}",
                     )
                 else:
-                    st.session_state.warning = T("no_other_pairing")
+                    in_sel = None
+                    st.caption(T("no_spare"))
+            bb = st.columns(2)
+            if bb[0].button(
+                T("swap"), key=f"swap_btn_{court_no}",
+                disabled=not pool, width="stretch",
+            ):
+                out_pid = on_court_now[off_labels.index(off_sel)]
+                in_pid = pool[in_labels.index(in_sel)]
+                storage.swap_match_player(
+                    club, active["id"], out_pid, in_pid,
+                    members[in_pid]["name"],
+                    members[in_pid]["ratings"][board],
+                )
+                st.session_state.flash = T(
+                    "swapped", out=off_sel, new=members[in_pid]["name"],
+                )
                 st.rerun()
             if bb[1].button(
                 T("cancel_match"), key=f"cx_{active['id']}",

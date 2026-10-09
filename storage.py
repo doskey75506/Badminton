@@ -282,18 +282,27 @@ def finish_match(club_id, match_id, score_a, score_b, ratings_before, ratings_af
     save_matches(club_id, matches)
 
 
-def reshuffle_match(club_id, match_id, team_a, team_b, names, ratings_before):
+def swap_match_player(club_id, match_id, out_pid, in_pid, name, rating):
     matches = load_matches(club_id)
-    for m in matches:
-        if m["id"] == match_id:
-            if m["score_a"] is not None:
-                raise ValueError("cannot reshuffle a finished match")
-            m["team_a"] = list(team_a)
-            m["team_b"] = list(team_b)
-            m["names"] = names
-            m["ratings_before"] = dict(ratings_before)
-            break
+    m = next((m for m in matches if m["id"] == match_id), None)
+    if m is None:
+        raise ValueError("match not found")
+    if m["score_a"] is not None:
+        raise ValueError("cannot swap a finished match")
+    if in_pid in m["team_a"] or in_pid in m["team_b"]:
+        raise ValueError("player already in match")
+    if out_pid in m["team_a"]:
+        m["team_a"][m["team_a"].index(out_pid)] = in_pid
+    elif out_pid in m["team_b"]:
+        m["team_b"][m["team_b"].index(out_pid)] = in_pid
+    else:
+        raise ValueError("player not in match")
+    m["names"].pop(out_pid, None)
+    m["ratings_before"].pop(out_pid, None)
+    m["names"][in_pid] = name
+    m["ratings_before"][in_pid] = rating
     save_matches(club_id, matches)
+    return m
 
 
 def cancel_match(club_id, match_id):
