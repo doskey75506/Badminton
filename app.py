@@ -1,4 +1,7 @@
 from datetime import date as date_cls, datetime, timedelta
+import os
+import threading
+import time
 
 import streamlit as st
 
@@ -10,6 +13,47 @@ import storage
 st.set_page_config(page_title="Badminton", layout="wide")
 
 BOARD_KEYS = storage.BOARDS
+
+
+@st.cache_resource
+def _idle_exit_watchdog():
+    grace = float(os.environ.get("IDLE_EXIT_SECONDS", "15"))
+    if grace <= 0:
+        return False
+
+    def loop():
+        from streamlit.runtime import get_instance
+
+        seen = False
+        idle_since = time.monotonic()
+        while True:
+            time.sleep(3)
+            try:
+                n = get_instance()._session_mgr.num_active_sessions()
+            except Exception:
+                return
+            if not isinstance(n, int):
+                return
+            if n > 0:
+                seen = True
+                idle_since = time.monotonic()
+            elif seen and time.monotonic() - idle_since >= grace:
+                print(
+                    f"No browser session for {grace:.0f}s, exiting.",
+                    flush=True,
+                )
+                os._exit(0)
+
+    print(
+        f"Auto-exit: quitting {grace:.0f}s after the last browser session "
+        "closes (set IDLE_EXIT_SECONDS=0 to disable).",
+        flush=True,
+    )
+    threading.Thread(target=loop, daemon=True).start()
+    return True
+
+
+_idle_exit_watchdog()
 
 
 def T(key, **kw):
@@ -231,14 +275,14 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                 - sum(before.get(p, 0.0) for p in active["team_b"])
             )
             st.caption(T("balance", n=round(balance)))
-            sc = st.columns(2)
-            score_a = sc[0].text_input("A", key=f"sa_{active['id']}")
-            score_b = sc[1].text_input("B", key=f"sb_{active['id']}")
-            if st.button(
-                T("submit_score"), key=f"sub_{active['id']}",
-                type="primary", width="stretch",
-            ):
-                submit_score(active, score_a, score_b)
+            with st.form(f"score_{active['id']}"):
+                sc = st.columns(2)
+                score_a = sc[0].text_input("A", key=f"sa_{active['id']}")
+                score_b = sc[1].text_input("B", key=f"sb_{active['id']}")
+                if st.form_submit_button(
+                    T("submit_score"), type="primary", width="stretch",
+                ):
+                    submit_score(active, score_a, score_b)
             bb = st.columns(2)
             if bb[0].button(
                 T("regen"), key=f"regen_{court_no}", width="stretch"
