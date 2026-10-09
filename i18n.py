@@ -91,6 +91,7 @@ LANGS = {
         "gender_male": "男",
         "gender_female": "女",
         "gender_unspecified": "未设置",
+        "state_assigned": "已分配",
         "ongoing": "进行中",
     },
     "en": {
@@ -185,6 +186,7 @@ LANGS = {
         "gender_male": "Male",
         "gender_female": "Female",
         "gender_unspecified": "Unspecified",
+        "state_assigned": "assigned",
         "ongoing": "In progress",
     },
 }

@@ -272,3 +272,68 @@ def test_womens_court_flow(app):
     assert members[winner_team[0]]["ratings"]["womens_double"] > 1000
     assert members[loser_team[0]]["ratings"]["womens_double"] < 1000
     assert members[winner_team[0]]["ratings"]["open_double"] == 1000
+
+
+def assert_no_suggestion_overlap(sugs):
+    seen = {}
+    for court, s in sugs.items():
+        for p in s["team_a"] + s["team_b"]:
+            assert p not in seen, (
+                f"player {p} assigned to courts {seen[p]} and {court}"
+            )
+            seen[p] = court
+
+
+def test_no_overlap_when_generating_additional_courts(app):
+    names = ("Alice", "Bob", "Cara", "Dan", "Eve", "Frank", "Grace", "Heidi")
+    seed_club(names=names)
+    app.run()
+    courts = [i for i in app.number_input if i.label == "场地数量"][0]
+    courts.set_value(1)
+    app.run()
+    click(app, "为 1 个空闲场地生成对阵")
+    assert set(app.session_state["suggestions"]) == {1}
+    courts = [i for i in app.number_input if i.label == "场地数量"][0]
+    courts.set_value(3)
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    sugs = app.session_state["suggestions"]
+    assert 1 in sugs
+    assert_no_suggestion_overlap(sugs)
+
+
+def test_no_overlap_mixed_boards(app):
+    names = ("Alice", "Bob", "Cara", "Dan", "Eve", "Frank", "Grace", "Heidi")
+    seed_club(names=names)
+    app.run()
+    courts = [i for i in app.number_input if i.label == "场地数量"][0]
+    courts.set_value(1)
+    app.run()
+    click(app, "为 1 个空闲场地生成对阵")
+    assert app.session_state["suggestions"][1]["board"] == "open_double"
+    courts = [i for i in app.number_input if i.label == "场地数量"][0]
+    courts.set_value(3)
+    app.run()
+    sels = [s for s in app.selectbox if s.label == "比赛类型"]
+    sels[0].set_value("开放单打")
+    app.run()
+    sels = [s for s in app.selectbox if s.label == "比赛类型"]
+    sels[1].set_value("开放单打")
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    sugs = app.session_state["suggestions"]
+    assert sugs[1]["board"] == "open_double"
+    assert sugs[2]["board"] == "open_single"
+    assert sugs[3]["board"] == "open_single"
+    assert_no_suggestion_overlap(sugs)
+
+
+def test_assigned_state_shown_in_stats(app):
+    seed_club()
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    stat_df = app.dataframe[0].value
+    col = [c for c in stat_df.columns if c == "在场"][0]
+    values = stat_df[col].tolist()
+    assert any("·已分配" in str(v) for v in values)
+    assert any(str(v) == "休息" for v in values)

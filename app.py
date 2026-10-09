@@ -290,7 +290,9 @@ def render_court(court_no, active, suggestion, members, date_str, others_used, a
                 st.rerun()
         else:
             st.selectbox(
-                T("board"), board_options(), key=f"court_board_{court_no}",
+                T("board"), board_options(),
+                index=BOARD_KEYS.index(storage.DEFAULT_BOARD),
+                key=f"court_board_{court_no}",
             )
             st.caption(T("court_free"))
 
@@ -352,14 +354,23 @@ if page == T("p_tonight"):
     }
     st.session_state.suggestions = suggestions
 
-    player_court = {
+    active_court = {
         p: court
         for court, m in active_by_court.items()
         for p in m["team_a"] + m["team_b"]
     }
-    for court, s in suggestions.items():
-        for p in s["team_a"] + s["team_b"]:
-            player_court.setdefault(p, court)
+    suggested_court = {
+        p: court
+        for court, s in suggestions.items()
+        for p in s["team_a"] + s["team_b"]
+    }
+
+    def court_cell(p):
+        if p in active_court:
+            return str(active_court[p])
+        if p in suggested_court:
+            return f"{suggested_court[p]}·{T('state_assigned')}"
+        return T("rest")
 
     if checked:
         played, rest = matchmaking.player_stats(checked, tonight, now)
@@ -371,7 +382,7 @@ if page == T("p_tonight"):
                 T("col_name"): members[p]["name"],
                 T("col_games"): played.get(p, 0),
                 T("col_rest"): round(rest.get(p, 0) / 60, 1),
-                T("col_court"): str(player_court[p]) if p in player_court else T("rest"),
+                T("col_court"): court_cell(p),
             }
             for p in sorted(checked, key=lambda x: -rest.get(x, 0))
         ]
@@ -385,14 +396,17 @@ if page == T("p_tonight"):
         T("gen_all", n=len(need_gen)), disabled=not need_gen,
         type="primary",
     ):
+        assigned = set()
+        for s in suggestions.values():
+            assigned |= set(s["team_a"]) | set(s["team_b"])
+        pool = [p for p in available if p not in assigned]
         courts_boards = []
+        default_label = board_options()[BOARD_KEYS.index(storage.DEFAULT_BOARD)]
         for court in need_gen:
-            label = st.session_state.get(
-                f"court_board_{court}", board_options()[0]
-            )
+            label = st.session_state.get(f"court_board_{court}", default_label)
             courts_boards.append((court, board_from_label(label)))
         new_sugs = matchmaking.suggest_matches(
-            members, available, storage.load_matches(club),
+            members, pool, storage.load_matches(club),
             tonight, now, courts_boards,
         )
         if not new_sugs:
