@@ -1,9 +1,10 @@
-from datetime import date as date_cls
+from datetime import date as date_cls, datetime
 from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import matchmaking
 import storage
 
 APP_PATH = Path(__file__).parent.parent / "app.py"
@@ -124,21 +125,60 @@ def test_court_count_adjustable(app):
     assert storage.get_settings(club)["courts"] == 4
 
 
-def test_shuffle_replaces_pairing(app):
-    seed_club()
+def swap(app, out_name, in_name):
+    off = [s for s in app.selectbox if s.label == "换下"][0]
+    on = [s for s in app.selectbox if s.label == "换上"][0]
+    off.set_value(out_name)
+    on.set_value(in_name)
+    app.run()
+    assert not app.exception
+    click(app, "换人")
+
+
+def test_swap_player(app):
+    club, ids = seed_club()
     app.run()
     click(app, "为 2 个空闲场地生成对阵")
-    club = storage.list_clubs()[0]["id"]
     before = storage.active_matches(club, TODAY)[0]
-    before_teams = (tuple(before["team_a"]), tuple(before["team_b"]))
-    click(app, "换一组")
+    on_court = before["team_a"] + before["team_b"]
+    out_pid = on_court[0]
+    free = [p for p in ids if p not in on_court]
+    name = {m["id"]: m["name"] for m in storage.load_members(club)}
+    swap(app, name[out_pid], name[free[0]])
     after = storage.active_matches(club, TODAY)
     assert len(after) == 1
-    assert after[0]["id"] == before["id"]
-    assert after[0]["started_at"] == before["started_at"]
-    assert (
-        tuple(after[0]["team_a"]), tuple(after[0]["team_b"])
-    ) != before_teams
+    m = after[0]
+    assert m["id"] == before["id"]
+    assert m["started_at"] == before["started_at"]
+    assert out_pid not in m["team_a"] + m["team_b"]
+    assert free[0] in m["team_a"] + m["team_b"]
+    assert len(m["team_a"]) == len(m["team_b"]) == 2
+    assert out_pid not in m["ratings_before"]
+    assert out_pid not in m["names"]
+    rating = {mm["id"]: mm["ratings"][m["board"]] for mm in storage.load_members(club)}
+    assert m["ratings_before"][free[0]] == rating[free[0]]
+
+
+def test_swap_restores_player_state(app):
+    club, ids = seed_club()
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    before = storage.active_matches(club, TODAY)[0]
+    on_court = before["team_a"] + before["team_b"]
+    out_pid = on_court[0]
+    free = [p for p in ids if p not in on_court]
+    name = {m["id"]: m["name"] for m in storage.load_members(club)}
+    played_before, _ = matchmaking.player_stats(
+        ids, storage.matches_on(club, TODAY), datetime.now(),
+    )
+    assert played_before[out_pid] == 1
+    assert played_before[free[0]] == 0
+    swap(app, name[out_pid], name[free[0]])
+    played_after, _ = matchmaking.player_stats(
+        ids, storage.matches_on(club, TODAY), datetime.now(),
+    )
+    assert played_after[out_pid] == 0
+    assert played_after[free[0]] == 1
 
 
 def test_cancel_match(app):

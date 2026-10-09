@@ -24,7 +24,7 @@ Badminton club matchmaking tool: a web app for multiple clubs and multiple court
 3. **Generate pairings**: click “Generate pairings for N free court(s)”. The app balances rest time (players who rested longest are picked first), then team strength, then varies partners/opponents. A successful generation **starts the match immediately** — the start time is recorded and the court card moves straight to score entry.
    - Each doubles court needs 4 free players (2 for singles). If there are not enough, only some courts are filled; the rest show “Free”.
    - The “On court” column shows each player's court number (e.g. 1, 2); anyone not assigned shows “Rest”.
-4. **Shuffle**: click “Shuffle” on a started match to get a different pairing (only for matches without a score yet; you get a notice if no alternative is available). The start time is kept.
+4. **Substitute**: on a started match, pick any on-court player under “Sub out” and a spare player under “Sub in” (must be checked in and not on another court; women's courts only accept female players), then click “Substitute”. The player who leaves returns to the pool with their game count and rest time rolled back to pre-match state (only matches without a score can be changed). The start time is kept.
 5. **Enter the score**: after the match, type the final scores for teams A and B (integers, 0–30, a winner is required) and click “Submit score”. Ratings update automatically and the match is written to history. Finished matches cannot be edited, so double-check before submitting.
 6. **Cancel**: a started match with no score yet can be cancelled; those players return to the pool, and their game counts and rest times roll back (rest is recalculated from their last actually completed match).
 
