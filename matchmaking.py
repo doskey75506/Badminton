@@ -1,26 +1,48 @@
 import itertools
 import math
 from collections import Counter
+from datetime import datetime
 
 BALANCE_TOLERANCE = 100
+REST_TOLERANCE = 60
 
 
-def player_stats(available_ids, tonight_matches):
-    order = sorted(tonight_matches, key=lambda m: m["seq"])
+def _parse(ts):
+    return datetime.fromisoformat(ts) if ts else None
+
+
+def rest_seconds(available_ids, tonight_matches, now):
+    first_start = None
+    last_finish = {}
+    for m in sorted(tonight_matches, key=lambda x: x["seq"]):
+        started = _parse(m.get("started_at"))
+        if started and (first_start is None or started < first_start):
+            first_start = started
+        finished = _parse(m.get("finished_at"))
+        if finished:
+            for pid in m["team_a"] + m["team_b"]:
+                if last_finish.get(pid) is None or finished > last_finish[pid]:
+                    last_finish[pid] = finished
+    rest = {}
+    for pid in available_ids:
+        if pid in last_finish:
+            t0 = last_finish[pid]
+        elif first_start:
+            t0 = first_start
+        else:
+            t0 = now
+        rest[pid] = max(0.0, (now - t0).total_seconds())
+    return rest
+
+
+def player_stats(available_ids, tonight_matches, now):
     played = {pid: 0 for pid in available_ids}
-    bench = {pid: 0 for pid in available_ids}
-    for m in order:
+    for m in tonight_matches:
         for pid in m["team_a"] + m["team_b"]:
             if pid in played:
                 played[pid] += 1
-    for pid in available_ids:
-        streak = 0
-        for m in reversed(order):
-            if pid in m["team_a"] + m["team_b"]:
-                break
-            streak += 1
-        bench[pid] = streak
-    return played, bench
+    rest = rest_seconds(available_ids, tonight_matches, now)
+    return played, rest
 
 
 def pair_counts(all_matches):
@@ -45,25 +67,28 @@ def _team_rating(members, team):
     return sum(members[p]["rating"] for p in team)
 
 
-def suggest_match(members, available_ids, all_matches, tonight_matches, exclude=None):
+def suggest_match(members, available_ids, all_matches, tonight_matches, now, exclude=None):
     if len(available_ids) < 4:
         return None
-    played, bench = player_stats(available_ids, tonight_matches)
+    played, rest = player_stats(available_ids, tonight_matches, now)
     partners, opponents = pair_counts(all_matches)
     exclude = exclude or set()
+    top4 = sorted(rest.values(), reverse=True)[:4]
+    top4_sum = sum(top4)
+    rest_span = REST_TOLERANCE * 4
 
     best = None
     for quad in itertools.combinations(sorted(available_ids), 4):
         if frozenset(quad) in exclude:
             continue
-        played_sum = sum(played[p] for p in quad)
-        bench_sum = sum(bench[p] for p in quad)
+        quad_rest = sum(rest[p] for p in quad)
+        rest_bucket = int((top4_sum - quad_rest) // rest_span)
         best_pairing = None
         for team_a, team_b in _pairings(quad):
             balance = abs(
                 _team_rating(members, team_a) - _team_rating(members, team_b)
             )
-            bucket = math.ceil(balance / BALANCE_TOLERANCE)
+            balance_bucket = math.ceil(balance / BALANCE_TOLERANCE)
             pair_rep = (
                 partners[tuple(sorted(team_a))] + partners[tuple(sorted(team_b))]
             )
@@ -71,23 +96,36 @@ def suggest_match(members, available_ids, all_matches, tonight_matches, exclude=
             for a in team_a:
                 for b in team_b:
                     opp_rep += opponents[tuple(sorted((a, b)))]
-            key = (bucket, pair_rep, opp_rep, team_a)
+            key = (balance_bucket, pair_rep, opp_rep, team_a, team_b)
             if best_pairing is None or key < best_pairing[0]:
                 best_pairing = (key, team_a, team_b, balance)
-        bucket, pair_rep, opp_rep, _ = best_pairing[0]
-        full_key = (played_sum, -bench_sum, bucket, pair_rep, opp_rep, quad)
+        _, team_a, team_b, balance = best_pairing
+        full_key = (rest_bucket,) + best_pairing[0]
         if best is None or full_key < best[0]:
-            best = (full_key, best_pairing, quad)
+            best = (full_key, team_a, team_b, balance)
 
     if best is None:
         return None
-    _, (_, team_a, team_b, balance), _ = best
-    stats = {
-        p: {"played": played[p], "bench": bench[p]} for p in available_ids
-    }
+    _, team_a, team_b, balance = best
+    stats = {p: {"played": played[p], "rest": rest[p]} for p in available_ids}
     return {
         "team_a": list(team_a),
         "team_b": list(team_b),
         "balance": balance,
         "stats": stats,
     }
+
+
+def suggest_matches(members, available_ids, all_matches, tonight_matches, now, courts):
+    pool = list(available_ids)
+    out = {}
+    for court in courts:
+        suggestion = suggest_match(
+            members, pool, all_matches, tonight_matches, now
+        )
+        if suggestion is None:
+            break
+        out[court] = suggestion
+        used = set(suggestion["team_a"]) | set(suggestion["team_b"])
+        pool = [p for p in pool if p not in used]
+    return out
