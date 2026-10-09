@@ -5,9 +5,12 @@ A single-page Streamlit web app for running a badminton club night: take attenda
 ## Quick start
 
 ```bash
-./setup.sh                       # creates the `badminton` venv + installs deps
+./setup.sh                       # one-time: creates the `badminton` venv + installs deps
+./startup.sh                     # start the app (opens http://localhost:8501)
+
+# or manually:
 source badminton/bin/activate
-streamlit run app.py             # opens http://localhost:8501
+streamlit run app.py
 python -m pytest                 # run tests from the repo root
 ```
 
