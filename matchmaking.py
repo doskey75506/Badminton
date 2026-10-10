@@ -150,3 +150,58 @@ def suggest_matches(members, available_ids, all_matches, tonight_matches, now, c
         used = set(suggestion["team_a"]) | set(suggestion["team_b"])
         pool = [p for p in pool if p not in used]
     return out
+
+
+def suggest_substitutes(
+    members, free_ids, team_a, team_b, outgoing,
+    all_matches, tonight_matches, now, board,
+):
+    outgoing = set(outgoing)
+    slots = [("a", i) for i, p in enumerate(team_a) if p in outgoing]
+    slots += [("b", i) for i, p in enumerate(team_b) if p in outgoing]
+    slot_pids = [p for p in team_a + team_b if p in outgoing]
+    free_ids = list(free_ids)
+    need = len(slots)
+    if need == 0 or len(free_ids) < need:
+        return None
+    _, rest = player_stats(free_ids, tonight_matches, now)
+    partners, opponents = pair_counts(all_matches)
+    top = sorted((rest[p] for p in free_ids), reverse=True)[:need]
+    top_sum = sum(top)
+    rest_span = REST_TOLERANCE * need
+    rating = {p: members[p]["ratings"][board] for p in free_ids}
+    kept_a = sum(
+        members[p]["ratings"][board] for p in team_a if p not in outgoing
+    )
+    kept_b = sum(
+        members[p]["ratings"][board] for p in team_b if p not in outgoing
+    )
+    best = None
+    for combo in itertools.permutations(free_ids, need):
+        new_a = list(team_a)
+        new_b = list(team_b)
+        for k, (side, i) in enumerate(slots):
+            (new_a if side == "a" else new_b)[i] = combo[k]
+        add_a = [combo[k] for k in range(need) if slots[k][0] == "a"]
+        add_b = [combo[k] for k in range(need) if slots[k][0] == "b"]
+        rest_bucket = int(
+            (top_sum - sum(rest[p] for p in combo)) // rest_span
+        )
+        balance = abs(
+            kept_a + sum(rating[p] for p in add_a)
+            - kept_b - sum(rating[p] for p in add_b)
+        )
+        balance_bucket = math.ceil(balance / BALANCE_TOLERANCE)
+        pair_rep = (
+            partners[tuple(sorted(new_a))] + partners[tuple(sorted(new_b))]
+        )
+        opp_rep = 0
+        for a in new_a:
+            for b in new_b:
+                opp_rep += opponents[tuple(sorted((a, b)))]
+        key = (rest_bucket, balance_bucket, pair_rep, opp_rep, combo)
+        if best is None or key < best[0]:
+            best = (key, combo)
+    if best is None:
+        return None
+    return {slot_pids[k]: best[1][k] for k in range(need)}

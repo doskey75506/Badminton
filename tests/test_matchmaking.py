@@ -184,3 +184,62 @@ def test_mixed_boards_share_pool():
     assert q1 <= {"A", "B", "C", "D"}
     assert q1.isdisjoint(q2)
     assert len(q2) == 4
+
+
+def test_substitutes_insufficient_pool():
+    result = matchmaking.suggest_substitutes(
+        EQUAL, ["E"], ["A", "B"], ["C", "D"], ["A", "B"], [], [], NOW,
+        "open_double",
+    )
+    assert result is None
+
+
+def test_substitutes_fills_only_outgoing_slots():
+    result = matchmaking.suggest_substitutes(
+        EQUAL, ["E", "F"], ["A", "B"], ["C", "D"], ["B"], [], [], NOW,
+        "open_double",
+    )
+    assert result is not None
+    assert set(result) == {"B"}
+    assert result["B"] in ("E", "F")
+
+
+def test_substitutes_multiple_slots():
+    result = matchmaking.suggest_substitutes(
+        EQUAL, ["E", "F"], ["A", "B"], ["C", "D"], ["A", "C"], [], [], NOW,
+        "open_double",
+    )
+    assert set(result) == {"A", "C"}
+    assert set(result.values()) == {"E", "F"}
+    assert result["A"] != result["C"]
+
+
+def test_substitutes_picks_longest_rested():
+    tonight = [
+        match(
+            0, ["E", "F"], ["A", "B"],
+            started=NOW - timedelta(minutes=10),
+            finished=NOW - timedelta(minutes=5),
+        ),
+        match(
+            1, ["E", "C"], ["A", "D"],
+            started=NOW - timedelta(minutes=4),
+            finished=NOW - timedelta(minutes=1),
+        ),
+    ]
+    result = matchmaking.suggest_substitutes(
+        EQUAL, ["E", "F"], ["A", "B"], ["C", "D"], ["A"], [], tonight, NOW,
+        "open_double",
+    )
+    assert result == {"A": "F"}
+
+
+def test_substitutes_prefers_balance():
+    members = make_members(
+        {"A": 800, "B": 800, "C": 1200, "D": 1200, "E": 1050, "F": 950}
+    )
+    result = matchmaking.suggest_substitutes(
+        members, ["E", "F"], ["A", "B"], ["C", "D"], ["A"], [], [], NOW,
+        "open_double",
+    )
+    assert result == {"A": "E"}

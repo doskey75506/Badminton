@@ -112,18 +112,22 @@ def overall_stats(matches):
     return stats
 
 
-def team_block(team, name_of, rating_of=None):
+def team_block(team, name_of, rating_of=None, sub_key=None):
     total = 0.0
     any_rating = False
     for pid in team:
         name = name_of(pid)
         r = rating_of(pid) if rating_of is not None else None
         if r is None:
-            st.write(f"**{name}**")
+            text = f"**{name}**"
         else:
             any_rating = True
             total += r
-            st.write(f"**{name}** — {r:.0f}")
+            text = f"**{name}** — {r:.0f}"
+        if sub_key is None:
+            st.write(text)
+        else:
+            st.checkbox(text, key=f"{sub_key}{pid}")
     if any_rating:
         st.caption(T("total_rating", r=round(total)))
 
@@ -262,6 +266,7 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                     active["team_a"],
                     lambda p: snap.get(p) or members.get(p, {}).get("name", p),
                     lambda p: before.get(p),
+                    sub_key=f"sub_{active['id']}_",
                 )
             with c2:
                 st.caption(T("team_b"))
@@ -269,6 +274,7 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                     active["team_b"],
                     lambda p: snap.get(p) or members.get(p, {}).get("name", p),
                     lambda p: before.get(p),
+                    sub_key=f"sub_{active['id']}_",
                 )
             balance = abs(
                 sum(before.get(p, 0.0) for p in active["team_a"])
@@ -289,39 +295,41 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                 if p not in others_used and p not in on_court_now
                 and matchmaking._gender_ok(members[p], board)
             ]
-            c_off, c_on = st.columns(2)
-            with c_off:
-                off_labels = [
-                    members[p]["name"] if p in members else p
-                    for p in on_court_now
-                ]
-                off_sel = st.selectbox(
-                    T("swap_out"), off_labels, key=f"swap_off_{court_no}",
-                )
-            with c_on:
-                if pool:
-                    in_labels = [members[p]["name"] for p in pool]
-                    in_sel = st.selectbox(
-                        T("swap_in"), in_labels, key=f"swap_on_{court_no}",
-                    )
-                else:
-                    in_sel = None
-                    st.caption(T("no_spare"))
+            ticked = [
+                p for p in on_court_now
+                if st.session_state.get(f"sub_{active['id']}_{p}", False)
+            ]
+            if len(pool) < max(len(ticked), 1):
+                st.caption(T("no_spare"))
             bb = st.columns(2)
             if bb[0].button(
                 T("swap"), key=f"swap_btn_{court_no}",
-                disabled=not pool, width="stretch",
+                disabled=not ticked or len(pool) < len(ticked),
+                width="stretch",
             ):
-                out_pid = on_court_now[off_labels.index(off_sel)]
-                in_pid = pool[in_labels.index(in_sel)]
-                storage.swap_match_player(
-                    club, active["id"], out_pid, in_pid,
-                    members[in_pid]["name"],
-                    members[in_pid]["ratings"][board],
+                mapping = matchmaking.suggest_substitutes(
+                    members, pool, active["team_a"], active["team_b"],
+                    ticked, storage.load_matches(club),
+                    storage.matches_on(club, date_str), datetime.now(), board,
                 )
-                st.session_state.flash = T(
-                    "swapped", out=off_sel, new=members[in_pid]["name"],
-                )
+                if mapping:
+                    info = {
+                        p: (members[p]["name"], members[p]["ratings"][board])
+                        for p in mapping.values()
+                    }
+                    storage.swap_match_players(club, active["id"], mapping, info)
+                    for p in mapping:
+                        st.session_state.pop(f"sub_{active['id']}_{p}", None)
+                    sep = "、" if st.session_state.lang == "zh" else ", "
+                    st.session_state.flash = T(
+                        "swapped",
+                        out=sep.join(members[p]["name"] for p in mapping),
+                        new=sep.join(
+                            members[p]["name"] for p in mapping.values()
+                        ),
+                    )
+                else:
+                    st.session_state.warning = T("no_spare")
                 st.rerun()
             if bb[1].button(
                 T("cancel_match"), key=f"cx_{active['id']}",

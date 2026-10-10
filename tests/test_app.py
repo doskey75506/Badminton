@@ -125,14 +125,10 @@ def test_court_count_adjustable(app):
     assert storage.get_settings(club)["courts"] == 4
 
 
-def swap(app, out_name, in_name):
-    off = [s for s in app.selectbox if s.label == "换下"][0]
-    on = [s for s in app.selectbox if s.label == "换上"][0]
-    off.set_value(out_name)
-    on.set_value(in_name)
+def tick(app, match_id, pid):
+    app.get_by_key(f"sub_{match_id}_{pid}").set_value(True)
     app.run()
     assert not app.exception
-    click(app, "换人")
 
 
 def test_swap_player(app):
@@ -143,20 +139,52 @@ def test_swap_player(app):
     on_court = before["team_a"] + before["team_b"]
     out_pid = on_court[0]
     free = [p for p in ids if p not in on_court]
-    name = {m["id"]: m["name"] for m in storage.load_members(club)}
-    swap(app, name[out_pid], name[free[0]])
+    tick(app, before["id"], out_pid)
+    click(app, "换人")
     after = storage.active_matches(club, TODAY)
     assert len(after) == 1
     m = after[0]
     assert m["id"] == before["id"]
     assert m["started_at"] == before["started_at"]
     assert out_pid not in m["team_a"] + m["team_b"]
-    assert free[0] in m["team_a"] + m["team_b"]
     assert len(m["team_a"]) == len(m["team_b"]) == 2
+    for p in on_court:
+        if p != out_pid:
+            assert p in m["team_a"] + m["team_b"]
+    new_pids = [p for p in m["team_a"] + m["team_b"] if p not in on_court]
+    assert len(new_pids) == 1
+    assert new_pids[0] in free
     assert out_pid not in m["ratings_before"]
     assert out_pid not in m["names"]
     rating = {mm["id"]: mm["ratings"][m["board"]] for mm in storage.load_members(club)}
-    assert m["ratings_before"][free[0]] == rating[free[0]]
+    assert m["ratings_before"][new_pids[0]] == rating[new_pids[0]]
+
+
+def test_swap_multiple_players(app):
+    club, ids = seed_club()
+    app.run()
+    click(app, "为 2 个空闲场地生成对阵")
+    before = storage.active_matches(club, TODAY)[0]
+    on_court = before["team_a"] + before["team_b"]
+    out_pids = [before["team_a"][0], before["team_b"][0]]
+    kept = [p for p in on_court if p not in out_pids]
+    for p in out_pids:
+        tick(app, before["id"], p)
+    click(app, "换人")
+    after = storage.active_matches(club, TODAY)
+    assert len(after) == 1
+    m = after[0]
+    assert m["id"] == before["id"]
+    assert m["started_at"] == before["started_at"]
+    assert len(m["team_a"]) == len(m["team_b"]) == 2
+    for p in out_pids:
+        assert p not in m["team_a"] + m["team_b"]
+        assert p not in m["ratings_before"]
+    for p in kept:
+        assert p in m["team_a"] + m["team_b"]
+    new_pids = [p for p in m["team_a"] + m["team_b"] if p not in on_court]
+    assert len(new_pids) == 2
+    assert set(new_pids) <= set(ids)
 
 
 def test_swap_restores_player_state(app):
@@ -167,18 +195,21 @@ def test_swap_restores_player_state(app):
     on_court = before["team_a"] + before["team_b"]
     out_pid = on_court[0]
     free = [p for p in ids if p not in on_court]
-    name = {m["id"]: m["name"] for m in storage.load_members(club)}
     played_before, _ = matchmaking.player_stats(
         ids, storage.matches_on(club, TODAY), datetime.now(),
     )
     assert played_before[out_pid] == 1
     assert played_before[free[0]] == 0
-    swap(app, name[out_pid], name[free[0]])
+    tick(app, before["id"], out_pid)
+    click(app, "换人")
+    m = storage.active_matches(club, TODAY)[0]
+    incoming = [p for p in m["team_a"] + m["team_b"] if p not in on_court]
+    assert len(incoming) == 1
     played_after, _ = matchmaking.player_stats(
         ids, storage.matches_on(club, TODAY), datetime.now(),
     )
     assert played_after[out_pid] == 0
-    assert played_after[free[0]] == 1
+    assert played_after[incoming[0]] == 1
 
 
 def test_cancel_match(app):
