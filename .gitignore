@@ -10,3 +10,5 @@ badminton-keystore.jks
 keystore.properties
 data/
 /badminton/
+.idea/
+gradle/gradle-daemon-jvm.properties
