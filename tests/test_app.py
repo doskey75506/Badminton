@@ -17,6 +17,10 @@ def app(tmp_path, monkeypatch):
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()
     assert not at.exception
+    lang = [s for s in at.selectbox if s.label == "语言 / Language"][0]
+    lang.set_value("中文")
+    at.run()
+    assert not at.exception
     return at
 
 
@@ -244,13 +248,13 @@ def test_cancel_rolls_back_player_state(app):
 
     click(app, "作废")
     assert storage.active_matches(club, TODAY) == []
+    assert TODAY in storage.get_settings(club)["night_starts"]
     rows = app.dataframe[0].value
     by_name = {r["姓名"]: r for r in rows.to_dict("records")}
     for pid in ids:
         row = by_name[names[pid]]
         assert row["场次"] == 0
         assert str(row["在场"]) == "休息"
-        assert row["休息(分钟)"] == 0.0
 
 
 def test_create_and_switch_club(app):
@@ -449,3 +453,41 @@ def test_stats_show_court_for_assigned_players(app):
     values = stat_df[col].tolist()
     assert any(str(v) == "1" for v in values)
     assert any(str(v) == "休息" for v in values)
+
+
+def test_default_lang_is_english_and_persisted(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path)
+    at = AppTest.from_file(str(APP_PATH), default_timeout=15)
+    at.run()
+    assert not at.exception
+    assert at.title[0].value == "Create your first club"
+
+    lang = [s for s in at.selectbox if s.label == "语言 / Language"][0]
+    lang.set_value("中文")
+    at.run()
+    assert not at.exception
+    assert at.title[0].value == "创建第一个俱乐部"
+    prefs = json.loads((tmp_path / "preferences.json").read_text(encoding="utf-8"))
+    assert prefs["lang"] == "zh"
+
+    at2 = AppTest.from_file(str(APP_PATH), default_timeout=15)
+    at2.run()
+    assert not at2.exception
+    assert at2.title[0].value == "创建第一个俱乐部"
+
+
+def test_standings_womens_hides_men(app):
+    club = storage.create_club("Test Club")["id"]
+    storage.add_member(club, "Alice", gender="f")
+    storage.add_member(club, "Bob", gender="m")
+    app.run()
+    navigate(app, "积分榜")
+    board_sel = [s for s in app.selectbox if s.label == "比赛类型"][0]
+    board_sel.set_value("女子单打")
+    app.run()
+    assert not app.exception
+    names = app.dataframe[0].value["姓名"].tolist()
+    assert "Alice" in names
+    assert "Bob" not in names

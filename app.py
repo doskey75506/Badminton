@@ -1,4 +1,5 @@
 from datetime import date as date_cls, datetime, timedelta
+import json
 import os
 import threading
 import time
@@ -71,7 +72,22 @@ def board_from_label(label):
         return storage.DEFAULT_BOARD
 
 
-st.session_state.setdefault("lang", "zh")
+def _load_pref_lang():
+    try:
+        text = (storage.DATA_DIR / "preferences.json").read_text(encoding="utf-8")
+        return json.loads(text).get("lang", "en")
+    except Exception:
+        return "en"
+
+
+def _save_pref_lang(lang):
+    storage.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (storage.DATA_DIR / "preferences.json").write_text(
+        json.dumps({"lang": lang}, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+st.session_state.setdefault("lang", _load_pref_lang())
 st.session_state.setdefault("active_date", date_cls.today())
 st.session_state.setdefault("flash", "")
 st.session_state.setdefault("warning", "")
@@ -137,7 +153,10 @@ with st.sidebar:
         "语言 / Language", ["中文", "English"],
         index=0 if st.session_state.lang == "zh" else 1,
     )
-    st.session_state.lang = "zh" if lang_pick == "中文" else "en"
+    new_lang = "zh" if lang_pick == "中文" else "en"
+    if new_lang != st.session_state.lang:
+        st.session_state.lang = new_lang
+        _save_pref_lang(new_lang)
 
 clubs = storage.list_clubs()
 
@@ -250,7 +269,7 @@ def create_match(court_no, pairing, date_str, members):
     )
 
 
-def render_court(court_no, active, members, date_str, others_used, checked):
+def render_court(court_no, active, members, date_str, others_used, checked, session_start=None):
     with st.container(border=True):
         st.markdown(f"**{T('court')} {court_no}**")
         if active is not None:
@@ -311,6 +330,7 @@ def render_court(court_no, active, members, date_str, others_used, checked):
                     members, pool, active["team_a"], active["team_b"],
                     ticked, storage.load_matches(club),
                     storage.matches_on(club, date_str), datetime.now(), board,
+                    session_start=session_start,
                 )
                 if mapping:
                     info = {
@@ -352,6 +372,12 @@ if page == T("p_tonight"):
     d = c[0].date_input(T("date"), key="active_date")
     date_str = d.isoformat()
     settings = storage.get_settings(club)
+    night_starts = settings.get("night_starts") or {}
+    session_start = (
+        datetime.fromisoformat(night_starts[date_str])
+        if date_str in night_starts
+        else None
+    )
     n_courts = int(
         c[1].number_input(
             T("courts"), min_value=1, max_value=12,
@@ -405,7 +431,9 @@ if page == T("p_tonight"):
         return T("rest")
 
     if checked:
-        played, rest = matchmaking.player_stats(checked, tonight, now)
+        played, rest = matchmaking.player_stats(
+            checked, tonight, now, session_start
+        )
         st.caption(
             T("attendance_summary", n=len(checked), on=len(on_court))
         )
@@ -435,7 +463,7 @@ if page == T("p_tonight"):
             courts_boards.append((court, board_from_label(label)))
         new_sugs = matchmaking.suggest_matches(
             members, available, storage.load_matches(club),
-            tonight, now, courts_boards,
+            tonight, now, courts_boards, session_start=session_start,
         )
         if not new_sugs:
             st.session_state.warning = T("not_enough_players")
@@ -464,6 +492,7 @@ if page == T("p_tonight"):
                 date_str,
                 others_used,
                 checked,
+                session_start=session_start,
             )
 
 elif page == T("p_members"):
@@ -538,6 +567,8 @@ elif page == T("p_standings"):
     stats = overall_stats(finished)
     rows = []
     for m in member_list:
+        if not matchmaking._gender_ok(m, board):
+            continue
         played, wins = stats.get(m["id"], (0, 0))
         rows.append(
             {

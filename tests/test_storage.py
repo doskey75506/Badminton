@@ -159,3 +159,44 @@ def test_match_board_roundtrip(club):
     assert loaded["board"] == "open_single"
     assert loaded["team_a"] == ["a"]
     assert loaded["team_b"] == ["b"]
+
+
+def test_add_match_records_night_start_once(club):
+    storage.add_match(club, "2026-10-09", 1, ["a", "b"], ["c", "d"], {}, {})
+    first = storage.get_settings(club)["night_starts"]["2026-10-09"]
+    storage.add_match(club, "2026-10-09", 2, ["e"], ["f"], {}, {})
+    assert storage.get_settings(club)["night_starts"]["2026-10-09"] == first
+    storage.add_match(club, "2026-10-10", 1, ["e"], ["f"], {}, {})
+    assert "2026-10-10" in storage.get_settings(club)["night_starts"]
+
+
+def test_swap_records_departed_and_roundtrips(club):
+    m = storage.add_match(
+        club, "2026-10-09", 1, ["a", "b"], ["c", "d"],
+        {"a": "甲", "b": "乙", "c": "丙", "d": "丁"},
+        {"a": 1000.0, "b": 1000.0, "c": 1000.0, "d": 1000.0},
+    )
+    updated = storage.swap_match_players(
+        club, m["id"], {"a": "e"}, {"e": ("戊", 1050.0)},
+    )
+    assert "a" in updated["departed"]
+    reloaded = storage.matches_on(club, "2026-10-09")[0]
+    assert "a" in reloaded["departed"]
+    assert reloaded["departed"]["a"] == updated["departed"]["a"]
+
+
+def test_old_csv_without_departed_column(data_dir):
+    import pandas as pd
+
+    club = storage.create_club("Legacy")["id"]
+    club_dir = data_dir / "clubs" / club
+    club_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame([{
+        "id": "m1", "date": "2026-01-01", "seq": "0", "court": "1",
+        "board": "open_double", "team_a": "a|b", "team_b": "c|d",
+        "names": "{}", "ratings_before": "{}", "ratings_after": "",
+        "score_a": "", "score_b": "", "winner": "",
+        "started_at": "2026-01-01T20:00:00", "finished_at": "",
+    }]).to_csv(club_dir / "matches.csv", index=False)
+    matches = storage.load_matches(club)
+    assert matches[0]["departed"] == {}

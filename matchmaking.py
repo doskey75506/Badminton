@@ -11,9 +11,14 @@ def _parse(ts):
     return datetime.fromisoformat(ts) if ts else None
 
 
-def rest_seconds(available_ids, tonight_matches, now):
+def rest_seconds(available_ids, tonight_matches, now, session_start=None):
     first_start = None
-    last_finish = {}
+    left_court = {}
+
+    def mark_left(pid, at):
+        if left_court.get(pid) is None or at > left_court[pid]:
+            left_court[pid] = at
+
     for m in sorted(tonight_matches, key=lambda x: x["seq"]):
         started = _parse(m.get("started_at"))
         if started and (first_start is None or started < first_start):
@@ -21,12 +26,17 @@ def rest_seconds(available_ids, tonight_matches, now):
         finished = _parse(m.get("finished_at"))
         if finished:
             for pid in m["team_a"] + m["team_b"]:
-                if last_finish.get(pid) is None or finished > last_finish[pid]:
-                    last_finish[pid] = finished
+                mark_left(pid, finished)
+        for pid, ts in (m.get("departed") or {}).items():
+            t = _parse(ts)
+            if t:
+                mark_left(pid, t)
     rest = {}
     for pid in available_ids:
-        if pid in last_finish:
-            t0 = last_finish[pid]
+        if pid in left_court:
+            t0 = left_court[pid]
+        elif session_start:
+            t0 = session_start
         elif first_start:
             t0 = first_start
         else:
@@ -35,13 +45,13 @@ def rest_seconds(available_ids, tonight_matches, now):
     return rest
 
 
-def player_stats(available_ids, tonight_matches, now):
+def player_stats(available_ids, tonight_matches, now, session_start=None):
     played = {pid: 0 for pid in available_ids}
     for m in tonight_matches:
         for pid in m["team_a"] + m["team_b"]:
             if pid in played:
                 played[pid] += 1
-    rest = rest_seconds(available_ids, tonight_matches, now)
+    rest = rest_seconds(available_ids, tonight_matches, now, session_start)
     return played, rest
 
 
@@ -73,12 +83,12 @@ def _team_rating(members, team, board):
     return sum(members[p]["ratings"][board] for p in team)
 
 
-def suggest_match(members, available_ids, all_matches, tonight_matches, now, exclude=None, board="open_double"):
+def suggest_match(members, available_ids, all_matches, tonight_matches, now, exclude=None, board="open_double", session_start=None):
     is_single = board.endswith("single")
     need = 2 if is_single else 4
     if len(available_ids) < need:
         return None
-    played, rest = player_stats(available_ids, tonight_matches, now)
+    played, rest = player_stats(available_ids, tonight_matches, now, session_start)
     partners, opponents = pair_counts(all_matches)
     exclude = exclude or set()
     top = sorted(rest.values(), reverse=True)[:need]
@@ -130,7 +140,7 @@ def suggest_match(members, available_ids, all_matches, tonight_matches, now, exc
     }
 
 
-def suggest_matches(members, available_ids, all_matches, tonight_matches, now, courts_boards):
+def suggest_matches(members, available_ids, all_matches, tonight_matches, now, courts_boards, session_start=None):
     normalized = []
     for item in courts_boards:
         if isinstance(item, tuple):
@@ -142,7 +152,8 @@ def suggest_matches(members, available_ids, all_matches, tonight_matches, now, c
     for court, board in normalized:
         gender_pool = [p for p in pool if _gender_ok(members[p], board)]
         suggestion = suggest_match(
-            members, gender_pool, all_matches, tonight_matches, now, board=board
+            members, gender_pool, all_matches, tonight_matches, now,
+            board=board, session_start=session_start,
         )
         if suggestion is None:
             continue
@@ -154,7 +165,7 @@ def suggest_matches(members, available_ids, all_matches, tonight_matches, now, c
 
 def suggest_substitutes(
     members, free_ids, team_a, team_b, outgoing,
-    all_matches, tonight_matches, now, board,
+    all_matches, tonight_matches, now, board, session_start=None,
 ):
     outgoing = set(outgoing)
     slots = [("a", i) for i, p in enumerate(team_a) if p in outgoing]
@@ -164,7 +175,7 @@ def suggest_substitutes(
     need = len(slots)
     if need == 0 or len(free_ids) < need:
         return None
-    _, rest = player_stats(free_ids, tonight_matches, now)
+    _, rest = player_stats(free_ids, tonight_matches, now, session_start)
     partners, opponents = pair_counts(all_matches)
     top = sorted((rest[p] for p in free_ids), reverse=True)[:need]
     top_sum = sum(top)

@@ -15,6 +15,7 @@ MATCH_COLUMNS = [
     "id", "date", "seq", "court", "board", "team_a", "team_b",
     "names", "ratings_before", "ratings_after",
     "score_a", "score_b", "winner", "started_at", "finished_at",
+    "departed",
 ]
 
 
@@ -71,7 +72,7 @@ def create_club(name):
 
 
 def get_settings(club_id):
-    settings = {"courts": DEFAULT_COURTS}
+    settings = {"courts": DEFAULT_COURTS, "night_starts": {}}
     settings.update(_load(_file(club_id, "settings"), {}))
     return settings
 
@@ -158,13 +159,14 @@ def _match_to_row(m):
         "winner": m.get("winner") or "",
         "started_at": m.get("started_at") or "",
         "finished_at": m.get("finished_at") or "",
+        "departed": _dump(m.get("departed") or {}),
     }
 
 
 def _make_match(
     id_, date_, seq, court, board, team_a, team_b,
     names, ratings_before, ratings_after,
-    score_a, score_b, winner, started_at, finished_at,
+    score_a, score_b, winner, started_at, finished_at, departed="",
 ):
     load = json.loads
     return {
@@ -183,6 +185,7 @@ def _make_match(
         "winner": winner or None,
         "started_at": started_at or None,
         "finished_at": finished_at or None,
+        "departed": json.loads(departed) if departed else {},
     }
 
 
@@ -192,6 +195,9 @@ def _df_to_matches(df):
     if "board" not in df.columns:
         df = df.copy()
         df["board"] = DEFAULT_BOARD
+    if "departed" not in df.columns:
+        df = df.copy()
+        df["departed"] = ""
     rows = zip(*(df[c].tolist() for c in MATCH_COLUMNS))
     return [_make_match(*r) for r in rows]
 
@@ -246,6 +252,11 @@ def add_match(club_id, date, court, team_a, team_b, names, ratings_before, board
     matches = load_matches(club_id)
     same_day = [m for m in matches if m["date"] == date]
     seq = max((m["seq"] for m in same_day), default=-1) + 1
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    settings = get_settings(club_id)
+    night_starts = settings.get("night_starts") or {}
+    if date not in night_starts:
+        set_settings(club_id, night_starts={**night_starts, date: now_iso})
     match = {
         "id": uuid.uuid4().hex[:10],
         "date": date,
@@ -260,8 +271,9 @@ def add_match(club_id, date, court, team_a, team_b, names, ratings_before, board
         "score_a": None,
         "score_b": None,
         "winner": None,
-        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "started_at": now_iso,
         "finished_at": None,
+        "departed": {},
     }
     matches.append(match)
     save_matches(club_id, matches)
@@ -297,6 +309,7 @@ def swap_match_players(club_id, match_id, swaps, info):
     for in_pid in swaps.values():
         if in_pid in m["team_a"] or in_pid in m["team_b"]:
             raise ValueError("player already in match")
+    left_at = datetime.now().isoformat(timespec="seconds")
     for out_pid, in_pid in swaps.items():
         if out_pid in m["team_a"]:
             m["team_a"][m["team_a"].index(out_pid)] = in_pid
@@ -307,6 +320,7 @@ def swap_match_players(club_id, match_id, swaps, info):
         name, rating = info[in_pid]
         m["names"][in_pid] = name
         m["ratings_before"][in_pid] = rating
+        m.setdefault("departed", {})[out_pid] = left_at
     save_matches(club_id, matches)
     return m
 

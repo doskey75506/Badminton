@@ -23,7 +23,7 @@ def make_members(ratings, gender=None):
 EQUAL = make_members({n: 1000 for n in ["A", "B", "C", "D", "E", "F"]})
 
 
-def match(seq, team_a, team_b, started=None, finished=None, score=(21, 15)):
+def match(seq, team_a, team_b, started=None, finished=None, score=(21, 15), departed=None):
     return {
         "date": "2026-10-09",
         "seq": seq,
@@ -34,6 +34,7 @@ def match(seq, team_a, team_b, started=None, finished=None, score=(21, 15)):
         "winner": "A" if score[0] > score[1] else "B",
         "started_at": started.isoformat() if started else None,
         "finished_at": finished.isoformat() if finished else None,
+        "departed": departed or {},
     }
 
 
@@ -243,3 +244,62 @@ def test_substitutes_prefers_balance():
         "open_double",
     )
     assert result == {"A": "E"}
+
+
+def test_rest_anchors_to_session_start_when_matches_deleted():
+    session = NOW - timedelta(minutes=5)
+    played, rest = matchmaking.player_stats(["A", "B"], [], NOW, session_start=session)
+    assert rest["A"] == pytest.approx(300)
+    assert rest["B"] == pytest.approx(300)
+
+
+def test_session_start_beats_first_start():
+    session = NOW - timedelta(minutes=10)
+    active = match(
+        0, ["E", "F"], ["C", "D"],
+        started=NOW - timedelta(minutes=2),
+    )
+    active["score_a"] = active["score_b"] = None
+    active["winner"] = None
+    _, rest = matchmaking.player_stats(["A"], [active], NOW, session_start=session)
+    assert rest["A"] == pytest.approx(600)
+
+
+def test_last_finish_still_wins_over_session_start():
+    session = NOW - timedelta(minutes=30)
+    finished_match = match(
+        0, ["A", "B"], ["C", "D"],
+        started=NOW - timedelta(minutes=10),
+        finished=NOW - timedelta(minutes=3),
+    )
+    _, rest = matchmaking.player_stats(["A"], [finished_match], NOW, session_start=session)
+    assert rest["A"] == pytest.approx(180)
+
+
+def test_departed_players_rest_from_sub_out_time():
+    active = match(
+        0, ["E", "B"], ["C", "D"],
+        started=NOW - timedelta(minutes=20),
+        departed={"A": (NOW - timedelta(minutes=4)).isoformat()},
+    )
+    active["score_a"] = active["score_b"] = None
+    active["winner"] = None
+    _, rest = matchmaking.player_stats(["A"], [active], NOW)
+    assert rest["A"] == pytest.approx(240)
+
+
+def test_departed_beats_earlier_finish():
+    earlier = match(
+        0, ["A", "B"], ["C", "D"],
+        started=NOW - timedelta(minutes=30),
+        finished=NOW - timedelta(minutes=25),
+    )
+    active = match(
+        1, ["E", "F"], ["C", "D"],
+        started=NOW - timedelta(minutes=10),
+        departed={"A": (NOW - timedelta(minutes=1)).isoformat()},
+    )
+    active["score_a"] = active["score_b"] = None
+    active["winner"] = None
+    _, rest = matchmaking.player_stats(["A"], [earlier, active], NOW)
+    assert rest["A"] == pytest.approx(60)
