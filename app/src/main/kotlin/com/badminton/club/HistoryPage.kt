@@ -3,10 +3,13 @@ package com.badminton.club
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,7 +88,7 @@ fun HistoryPage(state: AppState) {
                     }
                     showFrom = false
                     showTo = false
-                }) { Text(T("create")) }
+                }) { Text(T("ok")) }
             },
         ) {
             DatePicker(state = pickerState)
@@ -107,7 +110,7 @@ fun HistoryPage(state: AppState) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RangeButton(
+                    PlayerMenu(
                         label = T("h_range") + ": " + when (range) {
                             RangeOpt.ALL -> T("h_all")
                             RangeOpt.TODAY -> T("h_today")
@@ -115,15 +118,21 @@ fun HistoryPage(state: AppState) {
                             RangeOpt.D30 -> T("h_30")
                             RangeOpt.CUSTOM -> T("h_custom")
                         },
-                        onClick = {
-                            range = when (range) {
-                                RangeOpt.ALL -> RangeOpt.TODAY
-                                RangeOpt.TODAY -> RangeOpt.D7
-                                RangeOpt.D7 -> RangeOpt.D30
-                                RangeOpt.D30 -> RangeOpt.CUSTOM
-                                RangeOpt.CUSTOM -> RangeOpt.ALL
-                            }
+                        options = listOf(
+                            T("h_all") to RangeOpt.ALL,
+                            T("h_today") to RangeOpt.TODAY,
+                            T("h_7") to RangeOpt.D7,
+                            T("h_30") to RangeOpt.D30,
+                            T("h_custom") to RangeOpt.CUSTOM,
+                        ),
+                        selected = when (range) {
+                            RangeOpt.ALL -> T("h_all")
+                            RangeOpt.TODAY -> T("h_today")
+                            RangeOpt.D7 -> T("h_7")
+                            RangeOpt.D30 -> T("h_30")
+                            RangeOpt.CUSTOM -> T("h_custom")
                         },
+                        onSelect = { range = it },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -142,11 +151,10 @@ fun HistoryPage(state: AppState) {
                 }
                 PlayerMenu(
                     label = T("h_player") + ": " + player.ifEmpty { T("h_all_players") },
-                    options = listOf(T("h_all_players")) + namePool,
+                    options = (listOf(T("h_all_players")) + namePool).map { it to it },
                     selected = player.ifEmpty { T("h_all_players") },
                     onSelect = { player = it },
-                )
-            }
+                )            }
         }
 
         val today = LocalDate.now()
@@ -186,28 +194,24 @@ fun HistoryPage(state: AppState) {
 }
 
 @Composable
-private fun RangeButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
-}
-
-@Composable
-private fun PlayerMenu(
+private fun <T> PlayerMenu(
     label: String,
-    options: List<String>,
+    options: List<Pair<String, T>>,
     selected: String,
-    onSelect: (String) -> Unit,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    OutlinedButton(onClick = { expanded = true }) {
+    OutlinedButton(onClick = { expanded = true }, modifier = modifier) {
         Text(label)
         androidx.compose.material3.DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            options.forEach { opt ->
+            options.forEach { (opt, value) ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text(opt) },
-                    onClick = { onSelect(opt); expanded = false },
+                    onClick = { onSelect(value); expanded = false },
                 )
             }
         }
@@ -218,7 +222,6 @@ private fun PlayerMenu(
 private fun HistoryRow(m: Match) {
     val teamA = m.teamA.joinToString(" / ") { m.names[it] ?: it }
     val teamB = m.teamB.joinToString(" / ") { m.names[it] ?: it }
-    val score = if (m.scoreA != null) "${m.scoreA}:${m.scoreB}" else T("ongoing")
     val winner = when (m.winner) {
         "A" -> T("team_a")
         "B" -> T("team_b")
@@ -232,36 +235,45 @@ private fun HistoryRow(m: Match) {
                 (m.names[pid] ?: pid) to ((after[pid] ?: r) - r)
             }.sortedByDescending { it.second }
         )
-    } else "-"
+    } else null
 
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "${m.date} ${fmtTime(m.startedAt)}–${fmtTime(m.finishedAt)}",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "${T("h_court")} ${m.court} · ${T("board_${m.board}")}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("${T("team_a")}: $teamA", style = MaterialTheme.typography.bodySmall)
             Text(
-                "${m.date} ${fmtTime(m.startedAt)}–${fmtTime(m.finishedAt)}",
-                Modifier.weight(2f),
-                style = MaterialTheme.typography.labelMedium,
+                if (m.scoreA != null) "${m.scoreA} : ${m.scoreB}" else T("ongoing"),
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 2.dp),
             )
+            Text("${T("team_b")}: $teamB", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(4.dp))
             Text(
-                "${T("h_court")} ${m.court}",
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium,
+                "${T("h_winner")}: $winner · ${T("h_duration")}: ${fmtDuration(m)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
             )
-            Text(
-                T("board_${m.board}"),
-                Modifier.weight(1.5f),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text(teamA, Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
-            Text(score, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-            Text(teamB, Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
-        }
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text("${T("h_winner")}: $winner", Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall)
-            Text(fmtDuration(m), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-            Text(chg, Modifier.weight(3f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            if (chg != null) {
+                Text(
+                    "${T("h_rating_chg")}: $chg",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
         }
     }
 }

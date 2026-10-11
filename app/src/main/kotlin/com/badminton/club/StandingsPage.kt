@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.badminton.club.core.BOARDS
 import com.badminton.club.core.DEFAULT_BOARD
 import com.badminton.club.core.Match
+import com.badminton.club.core.genderOk
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 
@@ -71,6 +72,7 @@ fun StandingsPage(state: AppState) {
         if (members.isEmpty()) {
             item { Text(T("no_members"), color = MaterialTheme.colorScheme.outline) }
         } else {
+            val visible = members.filter { genderOk(it, board) }
             item {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text(T("col_name"), Modifier.weight(2f), fontWeight = FontWeight.Bold)
@@ -81,7 +83,7 @@ fun StandingsPage(state: AppState) {
                     Text(T("win_rate"), Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
                 }
             }
-            val rows = members.map { m ->
+            val rows = visible.map { m ->
                 val (played, wins) = stats[m.id] ?: (0 to 0)
                 Triple(m, played, wins)
             }.sortedByDescending { it.first.ratings[board] ?: 1000.0 }

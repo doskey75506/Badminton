@@ -140,7 +140,7 @@ private fun ClubMenu(state: AppState, clubs: List<Club>) {
     var expanded by remember { mutableStateOf(false) }
     val current = clubs.firstOrNull { it.id == state.club }?.name ?: ""
     OutlinedButton(onClick = { expanded = true }) {
-        Text(current)
+        Text("${T("club")}: $current ▾")
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             clubs.forEach { club ->
                 DropdownMenuItem(
