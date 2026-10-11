@@ -1,5 +1,7 @@
 package com.badminton.club
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,9 +26,14 @@ import androidx.compose.ui.unit.dp
 import com.badminton.club.core.Club
 import com.badminton.club.core.Storage
 
-class AppState(storage: Storage) {
+class AppState(storage: Storage, private val prefs: SharedPreferences) {
     val storage = storage
-    var lang by mutableStateOf("zh")
+    var lang by mutableStateOf(prefs.getString("lang", "en") ?: "en")
+
+    init {
+        Strings.setLang(lang)
+    }
+
     var clubId by mutableStateOf<String?>(null)
     var page by mutableStateOf(0)
     var flash by mutableStateOf("")
@@ -39,6 +47,7 @@ class AppState(storage: Storage) {
     fun switchLang(value: String) {
         lang = value
         Strings.setLang(value)
+        prefs.edit().putString("lang", value).apply()
     }
 
     fun clubs(): List<Club> = storage.listClubs()
@@ -59,7 +68,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val dataDir = java.io.File(filesDir, "data")
-        val state = AppState(Storage(dataDir))
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val state = AppState(Storage(dataDir), prefs)
         setContent {
             MaterialTheme {
                 BadmintonApp(state)
@@ -77,6 +87,12 @@ fun WelcomeScreen(state: AppState) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(T("welcome"), style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = {
+            state.switchLang(if (state.lang == "zh") "en" else "zh")
+            state.bump()
+        }) {
+            Text(if (state.lang == "zh") "EN" else "中文")
+        }
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },

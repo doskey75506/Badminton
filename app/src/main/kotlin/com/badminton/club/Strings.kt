@@ -31,7 +31,7 @@ private val zh = mapOf(
     "help_history_title" to "历史",
     "help_history_1" to "按「全部 / 今天 / 7 天 / 30 天 / 自定义」筛选比赛记录，也可只看某位球员，显示每场的比分、胜负、时长和积分变化。",
     "help_lang_title" to "语言",
-    "help_lang_1" to "顶栏的「EN / 中文」按钮可随时切换界面语言。",
+    "help_lang_1" to "「EN / 中文」按钮可随时切换界面语言（首次启动的创建页和顶栏都有）。",
     "help_data_title" to "数据",
     "help_data_1" to "所有数据保存在手机本地（应用私有目录，JSON 格式），应用没有网络权限，数据不会上传。",
     "help_data_2" to "卸载应用会一并删除数据；重要数据请及时另存。",
@@ -154,7 +154,7 @@ private val en = mapOf(
     "help_history_title" to "History",
     "help_history_1" to "Filter matches by “All / Today / 7 days / 30 days / Custom”, or by a single player. Each row shows score, winner, duration and rating changes.",
     "help_lang_title" to "Language",
-    "help_lang_1" to "Use the “EN / 中文” button in the top bar to switch language at any time.",
+    "help_lang_1" to "Use the “EN / 中文” button to switch language at any time (on the first-run welcome screen and in the top bar).",
     "help_data_title" to "Data",
     "help_data_1" to "All data is stored locally on your phone (app-private directory, JSON). The app has no network permission — nothing is uploaded.",
     "help_data_2" to "Uninstalling the app deletes the data; keep a copy of anything important.",
@@ -247,7 +247,7 @@ private val en = mapOf(
 )
 
 object Strings {
-    var lang: String = "zh"
+    var lang: String = "en"
         private set
 
     fun setLang(value: String) {
