@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -31,7 +32,7 @@ class AppState(storage: Storage, private val prefs: SharedPreferences) {
     var lang by mutableStateOf(prefs.getString("lang", "en") ?: "en")
 
     init {
-        Strings.setLang(lang)
+        Strings.setLanguage(lang)
     }
 
     var clubId by mutableStateOf<String?>(null)
@@ -46,7 +47,7 @@ class AppState(storage: Storage, private val prefs: SharedPreferences) {
 
     fun switchLang(value: String) {
         lang = value
-        Strings.setLang(value)
+        Strings.setLanguage(value)
         prefs.edit().putString("lang", value).apply()
     }
 
@@ -81,38 +82,45 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun WelcomeScreen(state: AppState) {
     var name by remember { mutableStateOf("") }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(T("welcome"), style = MaterialTheme.typography.headlineSmall)
-        TextButton(onClick = {
-            state.switchLang(if (state.lang == "zh") "en" else "zh")
-            state.bump()
-        }) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        TextButton(
+            onClick = {
+                state.switchLang(if (state.lang == "zh") "en" else "zh")
+                state.bump()
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp),
+        ) {
             Text(if (state.lang == "zh") "EN" else "中文")
         }
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text(T("club_name")) },
-            singleLine = true,
-        )
-        Button(onClick = {
-            try {
-                val club = state.storage.createClub(name)
-                state.clubId = club.id
-                state.bump()
-            } catch (e: com.badminton.club.core.DuplicateNameException) {
-                state.warning = T("club_dup")
-            } catch (e: IllegalArgumentException) {
-                state.warning = T("club_name_invalid")
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(T("welcome"), style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(T("club_name")) },
+                singleLine = true,
+            )
+            Button(onClick = {
+                try {
+                    val club = state.storage.createClub(name)
+                    state.clubId = club.id
+                    state.bump()
+                } catch (e: com.badminton.club.core.DuplicateNameException) {
+                    state.warning = T("club_dup")
+                } catch (e: IllegalArgumentException) {
+                    state.warning = T("club_name_invalid")
+                }
+            }) {
+                Text(T("create"))
             }
-        }) {
-            Text(T("create"))
+            WarningText(state)
         }
-        WarningText(state)
     }
 }
 

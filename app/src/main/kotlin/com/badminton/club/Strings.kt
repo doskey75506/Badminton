@@ -1,5 +1,9 @@
 package com.badminton.club
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 private val zh = mapOf(
     "welcome" to "创建第一个俱乐部",
     "club_name" to "俱乐部名称",
@@ -247,10 +251,10 @@ private val en = mapOf(
 )
 
 object Strings {
-    var lang: String = "en"
+    var lang: String by mutableStateOf("en")
         private set
 
-    fun setLang(value: String) {
+    fun setLanguage(value: String) {
         lang = if (value == "en") "en" else "zh"
     }
 
