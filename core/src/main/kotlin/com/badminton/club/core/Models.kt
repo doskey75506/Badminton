@@ -42,11 +42,13 @@ data class Match(
     val winner: String? = null,
     val startedAt: String? = null,
     val finishedAt: String? = null,
+    val departed: Map<String, String> = emptyMap(),
 )
 
 @Serializable
 data class Settings(
     val courts: Int = DEFAULT_COURTS,
+    val nightStarts: Map<String, String> = emptyMap(),
 )
 
 data class PlayerStats(

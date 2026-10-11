@@ -112,6 +112,11 @@ class Storage(val dataDir: File) {
         val matches = loadMatches(clubId)
         val sameDay = matches.filter { it.date == date }
         val seq = (sameDay.maxOfOrNull { it.seq } ?: -1) + 1
+        val now = nowIso()
+        val settings = getSettings(clubId)
+        if (settings.nightStarts[date] == null) {
+            setSettings(clubId, settings.copy(nightStarts = settings.nightStarts + (date to now)))
+        }
         val match = Match(
             id = UUID.randomUUID().toString().take(10),
             date = date,
@@ -122,7 +127,7 @@ class Storage(val dataDir: File) {
             teamB = teamB,
             names = names,
             ratingsBefore = ratingsBefore,
-            startedAt = nowIso(),
+            startedAt = now,
         )
         saveMatches(clubId, matches + match)
         return match
@@ -168,6 +173,7 @@ class Storage(val dataDir: File) {
             require(inPid !in m.teamA && inPid !in m.teamB) { "player already in match" }
         }
         var updated = m
+        val leftAt = nowIso()
         for ((outPid, inPid) in swaps) {
             val newA = if (outPid in updated.teamA) {
                 updated.teamA.map { if (it == outPid) inPid else it }
@@ -187,6 +193,7 @@ class Storage(val dataDir: File) {
                 teamB = newB,
                 names = newNames,
                 ratingsBefore = newRatings,
+                departed = updated.departed + (outPid to leftAt),
             )
         }
         saveMatches(clubId, matches.map { if (it.id == matchId) updated else it })

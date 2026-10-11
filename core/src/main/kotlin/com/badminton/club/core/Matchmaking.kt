@@ -18,9 +18,13 @@ fun restSeconds(
     availableIds: List<String>,
     tonightMatches: List<Match>,
     now: LocalDateTime,
+    sessionStart: LocalDateTime? = null,
 ): Map<String, Double> {
     var firstStart: LocalDateTime? = null
-    val lastFinish = mutableMapOf<String, LocalDateTime>()
+    val leftCourt = mutableMapOf<String, LocalDateTime>()
+    fun markLeft(pid: String, at: LocalDateTime) {
+        if (leftCourt[pid] == null || at > leftCourt[pid]!!) leftCourt[pid] = at
+    }
     for (m in tonightMatches.sortedBy { it.seq }) {
         val started = parse(m.startedAt)
         if (started != null && (firstStart == null || started < firstStart)) {
@@ -28,16 +32,16 @@ fun restSeconds(
         }
         val finished = parse(m.finishedAt)
         if (finished != null) {
-            for (pid in m.teamA + m.teamB) {
-                if (lastFinish[pid] == null || finished > lastFinish[pid]!!) {
-                    lastFinish[pid] = finished
-                }
-            }
+            for (pid in m.teamA + m.teamB) markLeft(pid, finished)
+        }
+        for ((pid, ts) in m.departed) {
+            val t = parse(ts) ?: continue
+            markLeft(pid, t)
         }
     }
     val rest = mutableMapOf<String, Double>()
     for (pid in availableIds) {
-        val t0 = lastFinish[pid] ?: firstStart ?: now
+        val t0 = leftCourt[pid] ?: sessionStart ?: firstStart ?: now
         rest[pid] = max(0.0, Duration.between(t0, now).toSeconds().toDouble())
     }
     return rest
@@ -47,6 +51,7 @@ fun playerStats(
     availableIds: List<String>,
     tonightMatches: List<Match>,
     now: LocalDateTime,
+    sessionStart: LocalDateTime? = null,
 ): Pair<Map<String, Int>, Map<String, Double>> {
     val played = availableIds.associateWith { 0 }.toMutableMap()
     for (m in tonightMatches) {
@@ -54,7 +59,7 @@ fun playerStats(
             if (played.containsKey(pid)) played[pid] = played[pid]!! + 1
         }
     }
-    return played to restSeconds(availableIds, tonightMatches, now)
+    return played to restSeconds(availableIds, tonightMatches, now, sessionStart)
 }
 
 fun pairCounts(allMatches: List<Match>): Pair<Map<List<String>, Int>, Map<List<String>, Int>> {
@@ -105,12 +110,13 @@ fun suggestMatch(
     now: LocalDateTime,
     exclude: Set<Set<String>> = emptySet(),
     board: String = DEFAULT_BOARD,
+    sessionStart: LocalDateTime? = null,
 ): Suggestion? {
     val isSingle = board.endsWith("single")
     val need = if (isSingle) 2 else 4
     if (availableIds.size < need) return null
 
-    val (played, rest) = playerStats(availableIds, tonightMatches, now)
+    val (played, rest) = playerStats(availableIds, tonightMatches, now, sessionStart)
     val (partners, opponents) = pairCounts(allMatches)
     val topSum = rest.values.sortedDescending().take(need).sum()
     val restSpan = REST_TOLERANCE * need
@@ -186,13 +192,15 @@ fun suggestMatches(
     tonightMatches: List<Match>,
     now: LocalDateTime,
     courtsBoards: List<Pair<Int, String>>,
+    sessionStart: LocalDateTime? = null,
 ): Map<Int, Suggestion> {
     val out = mutableMapOf<Int, Suggestion>()
     var pool = availableIds.toList()
     for ((court, board) in courtsBoards) {
         val genderPool = pool.filter { genderOk(members[it], board) }
         val suggestion = suggestMatch(
-            members, genderPool, allMatches, tonightMatches, now, board = board
+            members, genderPool, allMatches, tonightMatches, now,
+            board = board, sessionStart = sessionStart,
         ) ?: continue
         out[court] = suggestion
         val used = suggestion.teamA.toSet() + suggestion.teamB.toSet()
@@ -211,6 +219,7 @@ fun suggestSubstitutes(
     tonightMatches: List<Match>,
     now: LocalDateTime,
     board: String,
+    sessionStart: LocalDateTime? = null,
 ): Map<String, String>? {
     val outgoingSet = outgoing.toSet()
     val slots = mutableListOf<Pair<String, Int>>()
@@ -225,7 +234,7 @@ fun suggestSubstitutes(
     val need = slots.size
     if (need == 0 || free.size < need) return null
 
-    val (_, rest) = playerStats(free, tonightMatches, now)
+    val (_, rest) = playerStats(free, tonightMatches, now, sessionStart)
     val (partners, opponents) = pairCounts(allMatches)
     val topSum = free.map { rest[it] ?: 0.0 }.sortedDescending().take(need).sum()
     val restSpan = REST_TOLERANCE * need

@@ -310,4 +310,63 @@ class MatchmakingTest {
         assertEquals(0.0, rest.getValue("A"), 0.001)
         assertEquals(0, ChronoUnit.SECONDS.between(now, now))
     }
+
+    @Test
+    fun restAnchorsToSessionStartWhenMatchesDeleted() {
+        val session = now.minusMinutes(5)
+        val (_, rest) = playerStats(listOf("A", "B"), emptyList(), now, sessionStart = session)
+        assertEquals(300.0, rest.getValue("A"), 0.001)
+        assertEquals(300.0, rest.getValue("B"), 0.001)
+    }
+
+    @Test
+    fun sessionStartBeatsFirstStart() {
+        val session = now.minusMinutes(10)
+        val active = Match(
+            id = "m0", date = "2026-10-09", seq = 0, court = 1,
+            teamA = listOf("E"), teamB = listOf("F"),
+            startedAt = now.minusMinutes(2).toString(),
+        )
+        val (_, rest) = playerStats(listOf("A", "B"), listOf(active), now, sessionStart = session)
+        assertEquals(600.0, rest.getValue("A"), 0.001)
+    }
+
+    @Test
+    fun lastFinishStillWinsOverSessionStart() {
+        val session = now.minusMinutes(30)
+        val finishedMatch = match(
+            0, listOf("A", "B"), listOf("C", "D"),
+            started = now.minusMinutes(10), finished = now.minusMinutes(3),
+        )
+        val (_, rest) = playerStats(listOf("A"), listOf(finishedMatch), now, sessionStart = session)
+        assertEquals(180.0, rest.getValue("A"), 0.001)
+    }
+
+    @Test
+    fun departedPlayersRestFromSubOutTime() {
+        val active = Match(
+            id = "m0", date = "2026-10-09", seq = 0, court = 1,
+            teamA = listOf("E", "B"), teamB = listOf("C", "D"),
+            startedAt = now.minusMinutes(20).toString(),
+            departed = mapOf("A" to now.minusMinutes(4).toString()),
+        )
+        val (_, rest) = playerStats(listOf("A"), listOf(active), now)
+        assertEquals(240.0, rest.getValue("A"), 0.001)
+    }
+
+    @Test
+    fun departedBeatsEarlierFinish() {
+        val earlier = match(
+            0, listOf("A", "B"), listOf("C", "D"),
+            started = now.minusMinutes(30), finished = now.minusMinutes(25),
+        )
+        val active = Match(
+            id = "m1", date = "2026-10-09", seq = 1, court = 1,
+            teamA = listOf("E", "F"), teamB = listOf("C", "D"),
+            startedAt = now.minusMinutes(10).toString(),
+            departed = mapOf("A" to now.minusMinutes(1).toString()),
+        )
+        val (_, rest) = playerStats(listOf("A"), listOf(earlier, active), now)
+        assertEquals(60.0, rest.getValue("A"), 0.001)
+    }
 }

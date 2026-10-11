@@ -111,6 +111,28 @@ class StorageTest {
         assertEquals(1050.0, updated.ratingsBefore.getValue("e"), 0.0)
         assertEquals(match.id, updated.id)
         assertEquals(match.startedAt, updated.startedAt)
+        assertTrue(updated.departed.containsKey("a"))
+    }
+
+    @Test
+    fun addMatchRecordsNightStartOnce() {
+        val club = storage.createClub("c")
+        assertTrue(storage.getSettings(club.id).nightStarts.isEmpty())
+        storage.addMatch(
+            club.id, "2026-10-09", 1,
+            listOf("a", "b"), listOf("c", "d"), emptyMap(), emptyMap(),
+        )
+        val first = storage.getSettings(club.id).nightStarts.getValue("2026-10-09")
+        storage.addMatch(
+            club.id, "2026-10-09", 2,
+            listOf("e"), listOf("f"), emptyMap(), emptyMap(),
+        )
+        assertEquals(first, storage.getSettings(club.id).nightStarts.getValue("2026-10-09"))
+        storage.addMatch(
+            club.id, "2026-10-10", 1,
+            listOf("e"), listOf("f"), emptyMap(), emptyMap(),
+        )
+        assertTrue(storage.getSettings(club.id).nightStarts.containsKey("2026-10-10"))
     }
 
     @Test

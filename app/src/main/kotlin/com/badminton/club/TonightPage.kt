@@ -36,7 +36,6 @@ import com.badminton.club.core.MAX_COURTS
 import com.badminton.club.core.MIN_COURTS
 import com.badminton.club.core.Match
 import com.badminton.club.core.Member
-import com.badminton.club.core.Settings
 import com.badminton.club.core.applyResult
 import com.badminton.club.core.genderOk
 import com.badminton.club.core.playerStats
@@ -90,6 +89,9 @@ fun TonightPage(state: AppState) {
     val date = LocalDate.parse(dateIso)
 
     val settings = remember(revision) { state.storage.getSettings(club) }
+    val sessionStart = remember(settings) {
+        settings.nightStarts[dateIso]?.let { LocalDateTime.parse(it) }
+    }
     var courtsText by remember(settings.courts) { mutableStateOf(settings.courts.toString()) }
     val nCourts = (courtsText.toIntOrNull() ?: settings.courts).coerceIn(MIN_COURTS, MAX_COURTS)
 
@@ -128,7 +130,7 @@ fun TonightPage(state: AppState) {
                     }
                     showDatePicker = false
                     state.bump()
-                }) { Text(T("create")) }
+                }) { Text(T("ok")) }
             },
         ) {
             DatePicker(state = pickerState)
@@ -151,7 +153,7 @@ fun TonightPage(state: AppState) {
                         courtsText = v.filter { it.isDigit() }.take(2)
                         val n = courtsText.toIntOrNull()
                         if (n != null && n in MIN_COURTS..MAX_COURTS && n != settings.courts) {
-                            state.storage.setSettings(club, Settings(courts = n))
+                            state.storage.setSettings(club, settings.copy(courts = n))
                             state.bump()
                         }
                     },
@@ -201,7 +203,7 @@ fun TonightPage(state: AppState) {
         }
 
         if (checked.isNotEmpty()) {
-            val (played, rest) = playerStats(checked, tonight, now)
+            val (played, rest) = playerStats(checked, tonight, now, sessionStart)
             val activeCourt = activeByCourt.values.flatMap { m ->
                 (m.teamA + m.teamB).map { it to m.court }
             }.toMap()
@@ -241,7 +243,8 @@ fun TonightPage(state: AppState) {
                 onClick = {
                     val boards = needGen.map { c -> c to (boardSelection[c] ?: DEFAULT_BOARD) }
                     val sugs = suggestMatches(
-                        members, available, state.storage.loadMatches(club), tonight, now, boards
+                        members, available, state.storage.loadMatches(club), tonight, now, boards,
+                        sessionStart = sessionStart,
                     )
                     if (sugs.isEmpty()) {
                         state.warning = T("not_enough_players")
@@ -281,6 +284,7 @@ fun TonightPage(state: AppState) {
                 onCourt = onCourt,
                 tonight = tonight,
                 revision = revision,
+                sessionStart = sessionStart,
             )
         }
     }
@@ -299,6 +303,7 @@ private fun CourtCard(
     onCourt: Set<String>,
     tonight: List<Match>,
     revision: Int,
+    sessionStart: LocalDateTime?,
 ) {
     val club = state.club
     Card(
@@ -315,6 +320,7 @@ private fun CourtCard(
                     checked = checked,
                     onCourt = onCourt,
                     tonight = tonight,
+                    sessionStart = sessionStart,
                 )
             } else {
                 BoardPicker(courtNo)
@@ -361,6 +367,7 @@ private fun ActiveMatch(
     checked: List<String>,
     onCourt: Set<String>,
     tonight: List<Match>,
+    sessionStart: LocalDateTime?,
 ) {
     val club = state.club
     val revision = state.revision
@@ -440,6 +447,7 @@ private fun ActiveMatch(
                 val mapping = suggestSubstitutes(
                     members, pool, active.teamA, active.teamB, ticked,
                     state.storage.loadMatches(club), tonight, LocalDateTime.now(), board,
+                    sessionStart = sessionStart,
                 )
                 if (mapping != null) {
                     val info = mapping.values.associateWith {
