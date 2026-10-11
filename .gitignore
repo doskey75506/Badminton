@@ -1,7 +1,10 @@
-badminton/
-__pycache__/
-*.pyc
-.pytest_cache/
-data/
-.streamlit/
 AGENTS.md
+.DS_Store
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/core/build/
+android/badminton-keystore.jks
+android/keystore.properties
+data/
