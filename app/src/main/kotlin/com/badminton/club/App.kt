@@ -104,8 +104,14 @@ fun BadmintonApp(state: AppState) {
         },
         bottomBar = {
             NavigationBar {
-                val icons = listOf("📋", "👥", "🏆", "🕓")
-                val labels = listOf(T("p_tonight"), T("p_members"), T("p_standings"), T("p_history"))
+                val icons = listOf("📋", "👥", "🏆", "🕓", "❓")
+                val labels = listOf(
+                    T("p_tonight"),
+                    T("p_members"),
+                    T("p_standings"),
+                    T("p_history"),
+                    T("p_help"),
+                )
                 labels.forEachIndexed { i, label ->
                     NavigationBarItem(
                         selected = state.page == i,
@@ -123,6 +129,7 @@ fun BadmintonApp(state: AppState) {
                 1 -> MembersPage(state)
                 2 -> StandingsPage(state)
                 3 -> HistoryPage(state)
+                4 -> HelpPage(state)
             }
         }
     }

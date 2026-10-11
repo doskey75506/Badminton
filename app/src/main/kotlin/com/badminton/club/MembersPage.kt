@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -69,13 +70,22 @@ fun MembersPage(state: AppState) {
                         T("gender_unspecified") to "",
                     )
                     genders.forEachIndexed { i, (label, _) ->
+                        val selected = genderIdx == i
                         OutlinedButton(
                             onClick = { genderIdx = i },
                             modifier = Modifier.weight(1f),
+                            colors = if (selected) {
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                ButtonDefaults.outlinedButtonColors()
+                            },
                         ) {
                             Text(
                                 label,
-                                fontWeight = if (genderIdx == i) FontWeight.Bold else null,
+                                fontWeight = if (selected) FontWeight.Bold else null,
                             )
                         }
                     }
