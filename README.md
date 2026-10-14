@@ -1,6 +1,6 @@
 # Badminton Club Matchmaker
 
-A Streamlit web app for running badminton club nights: multiple clubs, configurable courts, auto-generated balanced doubles pairings, score entry, rating updates, and match history. UI language is selectable (中文 / English).
+A Streamlit web app for running badminton club nights: multiple clubs, configurable courts, auto-generated balanced doubles pairings, score entry, rating updates, match history, and zip backup/restore (Data sync page). UI language is selectable (中文 / English).
 
 ## Quick start
 

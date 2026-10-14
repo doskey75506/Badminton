@@ -202,7 +202,8 @@ with st.sidebar:
                 st.rerun()
     page = st.radio(
         T("nav"),
-        [T("p_tonight"), T("p_members"), T("p_standings"), T("p_history")],
+        [T("p_tonight"), T("p_members"), T("p_standings"), T("p_history"),
+         T("p_sync")],
     )
 
 club = st.session_state.club_id
@@ -677,3 +678,38 @@ elif page == T("p_history"):
             st.dataframe(rows, width="stretch", hide_index=True)
         else:
             st.info(T("h_no_data"))
+
+elif page == T("p_sync"):
+    st.header(T("p_sync"))
+    st.caption(T("sync_intro"))
+
+    st.subheader(T("export"))
+    st.write(T("sync_export_desc"))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    backup_name = f"badminton-backup-{stamp}.zip"
+
+    def _exported():
+        st.session_state.flash = T("export_done", name=backup_name)
+
+    st.download_button(
+        T("export"), data=storage.export_bytes, file_name=backup_name,
+        mime="application/zip", on_click=_exported, key="export_btn",
+    )
+
+    st.subheader(T("import"))
+    st.write(T("sync_import_desc"))
+    uploaded = st.file_uploader(
+        T("import_pick"), type=["zip"], key="import_file",
+    )
+    if st.button(
+        T("import"), key="import_btn", disabled=uploaded is None,
+        type="primary",
+    ):
+        try:
+            storage.import_bytes(uploaded.getvalue())
+        except ValueError as e:
+            st.session_state.warning = T("import_fail", e=str(e))
+        else:
+            st.session_state.club_id = None
+            st.session_state.flash = T("import_done")
+        st.rerun()

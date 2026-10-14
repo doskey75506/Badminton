@@ -33,6 +33,7 @@ Badminton club matchmaking tool: a web app for multiple clubs and multiple court
 - **Members**: view / add / delete players (deleting also clears their attendance records; past matches stay in history).
 - **Standings**: ranked by current rating, with games, W/L, and win rate.
 - **History**: filter by time range (today / last 7 / last 30 days / custom start–end dates / all time) and by player; shows score, duration, and rating changes per match.
+- **Data sync**: “Export data” bundles everything into a zip backup your browser downloads; “Import data” restores a backup by overwriting the local data. Use it to back up or migrate to another machine.
 
 ## Rating system in brief
 
@@ -40,4 +41,4 @@ Team-sum Elo (K=32): expected score is computed from the sum of each team's rati
 
 ## Data
 
-Everything is stored locally as JSON under `data/`: club list, members and ratings, daily attendance, match history, and court settings. Deleting that folder wipes all data; never commit `data/` to version control.
+Everything is stored locally as JSON/CSV under `data/`: club list, members and ratings, daily attendance, match history, and court settings. Deleting that folder wipes all data; never commit `data/` to version control. Back up or migrate with the **Data sync** page: “Export data” downloads a zip of everything; on the new machine, install the app and “Import data” to pick that file. **Importing completely overwrites the local data — no merging.**

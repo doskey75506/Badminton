@@ -54,7 +54,7 @@ def test_all_pages_render_zh(app):
     seed_club()
     app.run()
     assert not app.exception
-    for page in ["今晚", "成员", "积分榜", "历史"]:
+    for page in ["今晚", "成员", "积分榜", "历史", "数据同步"]:
         navigate(app, page)
 
 
@@ -65,7 +65,7 @@ def test_all_pages_render_en(app):
     lang.set_value("English")
     app.run()
     assert not app.exception
-    for page in ["Tonight", "Members", "Standings", "History"]:
+    for page in ["Tonight", "Members", "Standings", "History", "Data sync"]:
         navigate(app, page)
 
 
@@ -491,3 +491,60 @@ def test_standings_womens_hides_men(app):
     names = app.dataframe[0].value["姓名"].tolist()
     assert "Alice" in names
     assert "Bob" not in names
+
+
+def test_sync_page_renders_export_button(app):
+    seed_club()
+    app.run()
+    navigate(app, "数据同步")
+    assert not app.exception
+    exports = [b for b in app.download_button if b.label == "导出数据"]
+    assert len(exports) == 1
+    assert app.get_by_key("import_btn").disabled
+    app.file_uploader[0].set_value(
+        ("badminton-backup.zip", b"placeholder", "application/zip")
+    )
+    app.run()
+    assert not app.get_by_key("import_btn").disabled
+
+
+def test_sync_export_shows_flash(app):
+    seed_club()
+    app.run()
+    navigate(app, "数据同步")
+    [b for b in app.download_button if b.label == "导出数据"][0].click()
+    app.run()
+    assert not app.exception
+    assert any("已导出" in s.value for s in app.success)
+
+
+def test_sync_import_restores_backup(app):
+    seed_club()
+    app.run()
+    backup = storage.export_bytes()
+
+    storage.create_club("临时俱乐部")
+    app.run()
+    assert len(storage.list_clubs()) == 2
+
+    navigate(app, "数据同步")
+    app.file_uploader[0].set_value(
+        ("badminton-backup.zip", backup, "application/zip")
+    )
+    app.run()
+    assert not app.exception
+    click(app, "导入数据")
+
+    assert [c["name"] for c in storage.list_clubs()] == ["Test Club"]
+    assert any("导入成功" in s.value for s in app.success)
+
+
+def test_sync_import_invalid_zip_warns(app):
+    seed_club()
+    app.run()
+    navigate(app, "数据同步")
+    app.file_uploader[0].set_value(("bad.zip", b"not a zip", "application/zip"))
+    app.run()
+    click(app, "导入数据")
+    assert [c["name"] for c in storage.list_clubs()] == ["Test Club"]
+    assert any("导入失败" in w.value for w in app.warning)

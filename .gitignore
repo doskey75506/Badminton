@@ -3,5 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
+data.import/
+data.old/
 .streamlit/
 AGENTS.md

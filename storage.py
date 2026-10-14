@@ -1,5 +1,8 @@
+import io
 import json
+import shutil
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -363,3 +366,82 @@ def set_attendance(club_id, date, member_ids):
     attendance = load_attendance(club_id)
     attendance[date] = list(member_ids)
     save_attendance(club_id, attendance)
+
+
+def export_bytes():
+    base = DATA_DIR
+    if not (base / "clubs.json").exists():
+        raise ValueError("no data to export")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        files = sorted(
+            (p for p in base.rglob("*") if p.is_file() and p.suffix != ".tmp"),
+            key=lambda p: p.relative_to(base).as_posix(),
+        )
+        for p in files:
+            zf.write(p, p.relative_to(base).as_posix())
+    return buf.getvalue()
+
+
+def import_bytes(data):
+    base = DATA_DIR
+    parent = base.parent
+    stage = parent / (base.name + ".import")
+    old = parent / (base.name + ".old")
+    try:
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir(parents=True)
+        _extract_and_validate(data, stage)
+        if old.exists():
+            shutil.rmtree(old)
+        moved_old = False
+        if base.exists():
+            base.rename(old)
+            moved_old = True
+        try:
+            stage.rename(base)
+        except OSError:
+            if moved_old:
+                old.rename(base)
+            raise
+        if old.exists():
+            shutil.rmtree(old)
+    except ValueError:
+        if stage.exists():
+            shutil.rmtree(stage)
+        raise
+    except Exception as e:
+        if stage.exists():
+            shutil.rmtree(stage)
+        raise ValueError(f"cannot import backup: {e}") from e
+    _MATCH_CACHE.clear()
+
+
+def _extract_and_validate(data, stage):
+    files = 0
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as e:
+        raise ValueError(f"cannot import backup: {e}") from e
+    with zf:
+        for entry in zf.infolist():
+            if entry.is_dir():
+                continue
+            out = (stage / entry.filename).resolve()
+            if not out.is_relative_to(stage.resolve()):
+                raise ValueError("invalid path in backup")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(zf.read(entry))
+            files += 1
+    if files == 0:
+        raise ValueError("not a backup archive")
+    clubs_path = stage / "clubs.json"
+    if not clubs_path.exists():
+        raise ValueError("backup is missing clubs.json")
+    try:
+        clubs = json.loads(clubs_path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise ValueError(f"backup has corrupt clubs.json: {e}") from e
+    if not isinstance(clubs, list) or not clubs:
+        raise ValueError("backup contains no clubs")

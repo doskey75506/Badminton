@@ -200,3 +200,92 @@ def test_old_csv_without_departed_column(data_dir):
     }]).to_csv(club_dir / "matches.csv", index=False)
     matches = storage.load_matches(club)
     assert matches[0]["departed"] == {}
+
+
+def test_export_import_roundtrip(data_dir, tmp_path, monkeypatch):
+    club = storage.create_club("测试俱乐部")["id"]
+    m = storage.add_member(club, "张三", rating=1200, gender="f")
+    storage.set_settings(club, courts=5)
+    storage.set_attendance(club, "2026-10-09", [m["id"]])
+    storage.add_match(
+        club, "2026-10-09", 1, ["a"], ["b"], {"a": "A", "b": "B"},
+        {"a": 1000.0, "b": 1000.0}, board="open_single",
+    )
+
+    data = storage.export_bytes()
+    fresh = tmp_path / "fresh"
+    monkeypatch.setattr(storage, "DATA_DIR", fresh)
+    storage.import_bytes(data)
+
+    assert [c["name"] for c in storage.list_clubs()] == ["测试俱乐部"]
+    assert storage.get_settings(club)["courts"] == 5
+    members = storage.load_members(club)
+    assert [x["name"] for x in members] == ["张三"]
+    assert members[0]["ratings"]["open_double"] == 1200.0
+    assert members[0]["gender"] == "f"
+    assert storage.get_attendance(club, "2026-10-09") == [m["id"]]
+    matches = storage.load_matches(club)
+    assert len(matches) == 1
+    assert matches[0]["board"] == "open_single"
+
+    monkeypatch.setattr(storage, "DATA_DIR", data_dir)
+    assert [c["name"] for c in storage.list_clubs()] == ["测试俱乐部"]
+
+
+def test_import_fully_overwrites_existing_data(data_dir):
+    src_club = storage.create_club("来源")["id"]
+    storage.add_member(src_club, "甲")
+    data = storage.export_bytes()
+
+    stale = storage.create_club("本机旧数据")["id"]
+    storage.add_member(stale, "路人")
+
+    storage.import_bytes(data)
+
+    assert [c["name"] for c in storage.list_clubs()] == ["来源"]
+    assert [m["name"] for m in storage.load_members(src_club)] == ["甲"]
+    assert storage.load_members(stale) == []
+    assert not (data_dir / "clubs" / stale).exists()
+
+
+def test_import_rejects_invalid_backup_and_keeps_data(data_dir, tmp_path, monkeypatch):
+    import io
+    import json
+    import zipfile
+
+    storage.create_club("keep")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("foo.txt", "hello")
+    bad_zip = buf.getvalue()
+
+    with pytest.raises(ValueError):
+        storage.import_bytes(b"")
+    with pytest.raises(ValueError):
+        storage.import_bytes(b"not a zip")
+    with pytest.raises(ValueError):
+        storage.import_bytes(bad_zip)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("clubs.json", json.dumps([]))
+    with pytest.raises(ValueError):
+        storage.import_bytes(buf.getvalue())
+
+    assert [c["name"] for c in storage.list_clubs()] == ["keep"]
+
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path / "src")
+    src_club = storage.create_club("来源")["id"]
+    storage.add_member(src_club, "甲")
+    data = storage.export_bytes()
+
+    monkeypatch.setattr(storage, "DATA_DIR", data_dir)
+    storage.import_bytes(data)
+    assert [c["name"] for c in storage.list_clubs()] == ["来源"]
+    assert [c["id"] for c in storage.list_clubs()] == [src_club]
+
+
+def test_export_without_data_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path / "empty")
+    with pytest.raises(ValueError):
+        storage.export_bytes()
