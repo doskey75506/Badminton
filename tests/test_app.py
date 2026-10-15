@@ -493,29 +493,15 @@ def test_standings_womens_hides_men(app):
     assert "Bob" not in names
 
 
-def test_sync_page_renders_export_button(app):
+def test_sync_export_offers_download(app):
     seed_club()
     app.run()
     navigate(app, "数据同步")
     assert not app.exception
-    exports = [b for b in app.download_button if b.label == "导出数据"]
-    assert len(exports) == 1
-    assert app.get_by_key("import_btn").disabled
-    app.file_uploader[0].set_value(
-        ("badminton-backup.zip", b"placeholder", "application/zip")
-    )
-    app.run()
-    assert not app.get_by_key("import_btn").disabled
-
-
-def test_sync_export_shows_flash(app):
-    seed_club()
-    app.run()
-    navigate(app, "数据同步")
-    [b for b in app.download_button if b.label == "导出数据"][0].click()
-    app.run()
-    assert not app.exception
-    assert any("已导出" in s.value for s in app.success)
+    assert len(app.download_button) == 1
+    name_input = [t for t in app.text_input if t.key == "export_name"][0]
+    assert name_input.value.startswith("badminton-backup-")
+    assert name_input.value.endswith(".zip")
 
 
 def test_sync_import_restores_backup(app):
@@ -529,7 +515,7 @@ def test_sync_import_restores_backup(app):
 
     navigate(app, "数据同步")
     app.file_uploader[0].set_value(
-        ("badminton-backup.zip", backup, "application/zip")
+        ("badminton-backup-1.zip", backup, "application/zip")
     )
     app.run()
     assert not app.exception
@@ -548,3 +534,39 @@ def test_sync_import_invalid_zip_warns(app):
     click(app, "导入数据")
     assert [c["name"] for c in storage.list_clubs()] == ["Test Club"]
     assert any("导入失败" in w.value for w in app.warning)
+
+
+def test_sync_import_hidden_without_file(app):
+    seed_club()
+    app.run()
+    navigate(app, "数据同步")
+    assert not app.exception
+    assert [b for b in app.button if b.label == "导入数据"] == []
+
+
+def test_sync_import_roundtrip(app):
+    club, ids = seed_club()
+    app.run()
+    storage.add_match(
+        club, TODAY, 1, ids[:2], ids[2:4],
+        {p: n for p, n in zip(ids[:4], ["Alice", "Bob", "Cara", "Dan"])},
+        {p: 1000.0 for p in ids[:4]},
+    )
+    backup = storage.export_bytes()
+    import io
+    import json
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(backup)) as zf:
+        assert "clubs.json" in zf.namelist()
+        assert json.loads(zf.read("clubs.json"))[0]["name"] == "Test Club"
+
+    storage.create_club("临时俱乐部")
+    app.run()
+    navigate(app, "数据同步")
+    app.file_uploader[0].set_value(
+        ("badminton-backup-2.zip", backup, "application/zip")
+    )
+    app.run()
+    click(app, "导入数据")
+    assert [c["name"] for c in storage.list_clubs()] == ["Test Club"]
+    assert len(storage.matches_on(club, TODAY)) == 1

@@ -683,31 +683,36 @@ elif page == T("p_sync"):
     st.header(T("p_sync"))
     st.caption(T("sync_intro"))
 
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+
     st.subheader(T("export"))
     st.write(T("sync_export_desc"))
-    stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    backup_name = f"badminton-backup-{stamp}.zip"
-
-    def _exported():
-        st.session_state.flash = T("export_done", name=backup_name)
-
-    st.download_button(
-        T("export"), data=storage.export_bytes, file_name=backup_name,
-        mime="application/zip", on_click=_exported, key="export_btn",
+    export_name = st.text_input(
+        T("sync_filename"), value=f"badminton-backup-{stamp}.zip",
+        key="export_name",
     )
+    name = export_name.strip() or f"badminton-backup-{stamp}.zip"
+    if not name.endswith(".zip"):
+        name += ".zip"
+    try:
+        backup = storage.export_bytes()
+    except ValueError as e:
+        st.warning(T("export_fail", e=str(e)))
+    else:
+        st.download_button(
+            T("export"), data=backup, file_name=name,
+            mime="application/zip", key="export_btn", type="primary",
+        )
 
     st.subheader(T("import"))
     st.write(T("sync_import_desc"))
-    uploaded = st.file_uploader(
-        T("import_pick"), type=["zip"], key="import_file",
-    )
-    if st.button(
-        T("import"), key="import_btn", disabled=uploaded is None,
-        type="primary",
+    uploaded = st.file_uploader(T("import_pick"), type="zip", key="import_file")
+    if uploaded is not None and st.button(
+        T("import"), key="import_btn", type="primary",
     ):
         try:
             storage.import_bytes(uploaded.getvalue())
-        except ValueError as e:
+        except (ValueError, OSError) as e:
             st.session_state.warning = T("import_fail", e=str(e))
         else:
             st.session_state.club_id = None
